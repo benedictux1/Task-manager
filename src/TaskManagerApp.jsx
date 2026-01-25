@@ -422,6 +422,7 @@ export default function TaskManagerApp() {
           toggleTaskDone={toggleTaskDone}
           deleteTask={deleteTask}
           goToProject={goToProject}
+          addTaskAdvanced={addTaskAdvanced}
         />
       )}
 
@@ -444,7 +445,7 @@ export default function TaskManagerApp() {
 // Project View Component
 function ProjectView({
   projects, selectedProjectId, setSelectedProjectId, addProject, updateProject, deleteProject,
-  tasks, types, statuses, getStatusColor, getTypeColor, addTask, addTaskAdvanced, updateTask, toggleTaskDone, deleteTask,
+  tasks, types, statuses, persons, getStatusColor, getTypeColor, getPersonColor, getPersonName, addTask, addTaskAdvanced, updateTask, toggleTaskDone, deleteTask,
   newTaskInput, setNewTaskInput, newTaskDueDate, setNewTaskDueDate
 }) {
   const [notesExpanded, setNotesExpanded] = useState(true);
@@ -539,6 +540,7 @@ function ProjectView({
             <ProjectInlineTaskCreator
               types={types}
               statuses={statuses}
+              persons={persons}
               getStatusColor={getStatusColor}
               getTypeColor={getTypeColor}
               onAdd={addTaskAdvanced}
@@ -554,6 +556,7 @@ function ProjectView({
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Type</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Status</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Due In</th>
+                    <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">POC</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F] w-48">Notes</th>
                     <th className="w-12 px-4 py-3"></th>
                   </tr>
@@ -565,6 +568,7 @@ function ProjectView({
                       task={task}
                       types={types}
                       statuses={statuses}
+                      persons={persons}
                       getStatusColor={getStatusColor}
                       getTypeColor={getTypeColor}
                       updateTask={updateTask}
@@ -1063,22 +1067,26 @@ function SizeDropdownSelect({ options, onSelect, editorRef }) {
 }
 
 // Inline Task Creator Component
-function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeColor, onAdd }) {
-  const [step, setStep] = useState('task'); // 'task', 'type', 'status'
+function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor, getTypeColor, onAdd }) {
+  const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'poc', 'project'
   const [taskName, setTaskName] = useState('');
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
+  const [selectedPOC, setSelectedPOC] = useState([]); // Array of person IDs
   const [selectedProject, setSelectedProject] = useState(null);
   const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
+  const [pocIndex, setPocIndex] = useState(-1); // -1 means "unassigned"
   const [projectIndex, setProjectIndex] = useState(-1);
 
   const taskInputRef = useRef(null);
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
+  const pocSelectRef = useRef(null);
   const projectSelectRef = useRef(null);
 
   const projectOptions = [{ id: null, name: 'No Project' }, ...projects];
+  const pocOptions = [{ id: null, name: '- (Unassigned)' }, ...(persons || [])];
 
   const handleTaskKeyDown = (e) => {
     if (e.key === 'Enter' && taskName.trim()) {
@@ -1115,17 +1123,29 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
       const newIndex = Math.min(statuses.length - 1, statusIndex + 1);
       setStatusIndex(newIndex);
       setSelectedStatus(statuses[newIndex].name);
-    } else if (e.key === 'Tab') {
+    } else if (e.key === 'Enter') {
+      setStep('poc');
+      setTimeout(() => pocSelectRef.current?.focus(), 50);
+    } else if (e.key === 'Escape') {
+      resetForm();
+    }
+  };
+
+  const handlePOCKeyDown = (e) => {
+    e.preventDefault();
+    if (e.key === 'ArrowUp') {
+      const newIndex = Math.max(-1, pocIndex - 1);
+      setPocIndex(newIndex);
+      setSelectedPOC(newIndex === -1 ? [] : [pocOptions[newIndex + 1].id]);
+    } else if (e.key === 'ArrowDown') {
+      const newIndex = Math.min(pocOptions.length - 2, pocIndex + 1);
+      setPocIndex(newIndex);
+      setSelectedPOC(newIndex === -1 ? [] : [pocOptions[newIndex + 1].id]);
+    } else if (e.key === 'Tab' || (e.key === 'Enter' && e.shiftKey)) {
       setStep('project');
       setTimeout(() => projectSelectRef.current?.focus(), 50);
     } else if (e.key === 'Enter') {
-      // Allow skipping project selection and create task directly
-      if (e.shiftKey) {
-        setStep('project');
-        setTimeout(() => projectSelectRef.current?.focus(), 50);
-      } else {
-        createTask();
-      }
+      createTask();
     } else if (e.key === 'Escape') {
       resetForm();
     }
@@ -1160,7 +1180,8 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
       projectId: selectedProject,
       type: selectedType,
       status: selectedStatus,
-      dueDate: dueDate
+      dueDate: dueDate,
+      personIds: selectedPOC.filter(id => id !== null)
     };
 
     onAdd(newTask);
@@ -1172,9 +1193,11 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
     setTaskName('');
     setSelectedType('Regular');
     setSelectedStatus('My action');
+    setSelectedPOC([]);
     setSelectedProject(null);
     setTypeIndex(types.indexOf('Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
+    setPocIndex(-1);
     setProjectIndex(-1);
     setTimeout(() => taskInputRef.current?.focus(), 50);
   };
@@ -1189,6 +1212,18 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
   const handleStatusSelect = (statusName) => {
     setSelectedStatus(statusName);
     setStatusIndex(statuses.findIndex(s => s.name === statusName));
+    setStep('poc');
+    setTimeout(() => pocSelectRef.current?.focus(), 50);
+  };
+
+  const handlePOCSelect = (personId) => {
+    if (personId === null || personId === '') {
+      setSelectedPOC([]);
+      setPocIndex(-1);
+    } else {
+      setSelectedPOC([parseInt(personId)]);
+      setPocIndex(pocOptions.findIndex(p => p.id === parseInt(personId)) - 1);
+    }
     setStep('project');
     setTimeout(() => projectSelectRef.current?.focus(), 50);
   };
@@ -1244,7 +1279,7 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
         )}
 
         {/* Status Selection */}
-        {(step === 'status' || (step === 'project' && selectedStatus)) && (
+        {(step === 'status' || step === 'poc' || step === 'project') && selectedStatus && (
           <div className="relative">
             <select
               ref={statusSelectRef}
@@ -1263,6 +1298,28 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
             >
               {statuses.map(status => (
                 <option key={status.name} value={status.name}>{status.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* POC Selection */}
+        {(step === 'poc' || step === 'project') && (
+          <div className="relative">
+            <select
+              ref={pocSelectRef}
+              value={selectedPOC[0] || ''}
+              onChange={(e) => handlePOCSelect(e.target.value)}
+              onKeyDown={handlePOCKeyDown}
+              className={`px-4 py-3 rounded-lg border outline-none text-sm cursor-pointer min-w-[140px] transition-all ${
+                step === 'poc'
+                  ? 'bg-white border-[#0066CC] focus:ring-2 focus:ring-[#0066CC] shadow-sm'
+                  : 'bg-[#F9F9F9] border-gray-200'
+              }`}
+            >
+              <option value="">- (Unassigned)</option>
+              {(persons || []).map(person => (
+                <option key={person.id} value={person.id}>{person.name}</option>
               ))}
             </select>
           </div>
@@ -1302,7 +1359,13 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
           {step === 'status' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Use ↑↓ arrows. Enter to create, Shift+Enter for project
+              Use ↑↓ arrows, press Enter
+            </span>
+          )}
+          {step === 'poc' && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
+              Select POC. Enter to create, Tab for project
             </span>
           )}
           {step === 'project' && (
@@ -1318,17 +1381,20 @@ function InlineTaskCreator({ projects, types, statuses, getStatusColor, getTypeC
 }
 
 // Project Inline Task Creator Component (without project selection)
-function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColor, onAdd, selectedProjectId }) {
-  const [step, setStep] = useState('task'); // 'task', 'type', 'status'
+function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, getTypeColor, onAdd, selectedProjectId, defaultPersonId }) {
+  const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'poc'
   const [taskName, setTaskName] = useState('');
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
+  const [selectedPOC, setSelectedPOC] = useState(defaultPersonId ? [defaultPersonId] : []);
   const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
+  const [pocIndex, setPocIndex] = useState(defaultPersonId ? (persons || []).findIndex(p => p.id === defaultPersonId) : -1);
 
   const taskInputRef = useRef(null);
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
+  const pocSelectRef = useRef(null);
 
   const handleTaskKeyDown = (e) => {
     if (e.key === 'Enter' && taskName.trim()) {
@@ -1366,6 +1432,24 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
       setStatusIndex(newIndex);
       setSelectedStatus(statuses[newIndex].name);
     } else if (e.key === 'Enter') {
+      setStep('poc');
+      setTimeout(() => pocSelectRef.current?.focus(), 50);
+    } else if (e.key === 'Escape') {
+      resetForm();
+    }
+  };
+
+  const handlePOCKeyDown = (e) => {
+    e.preventDefault();
+    if (e.key === 'ArrowUp') {
+      const newIndex = Math.max(-1, pocIndex - 1);
+      setPocIndex(newIndex);
+      setSelectedPOC(newIndex === -1 ? [] : [(persons || [])[newIndex]?.id].filter(Boolean));
+    } else if (e.key === 'ArrowDown') {
+      const newIndex = Math.min((persons || []).length - 1, pocIndex + 1);
+      setPocIndex(newIndex);
+      setSelectedPOC(newIndex === -1 ? [] : [(persons || [])[newIndex]?.id].filter(Boolean));
+    } else if (e.key === 'Enter') {
       createTask();
     } else if (e.key === 'Escape') {
       resetForm();
@@ -1384,7 +1468,8 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
       projectId: selectedProjectId, // Auto-assign to current project
       type: selectedType,
       status: selectedStatus,
-      dueDate: dueDate
+      dueDate: dueDate,
+      personIds: selectedPOC.filter(id => id !== null)
     };
 
     onAdd(newTask);
@@ -1396,8 +1481,10 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
     setTaskName('');
     setSelectedType('Regular');
     setSelectedStatus('My action');
+    setSelectedPOC(defaultPersonId ? [defaultPersonId] : []);
     setTypeIndex(types.indexOf('Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
+    setPocIndex(defaultPersonId ? (persons || []).findIndex(p => p.id === defaultPersonId) : -1);
     setTimeout(() => taskInputRef.current?.focus(), 50);
   };
 
@@ -1411,6 +1498,18 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
   const handleStatusSelect = (statusName) => {
     setSelectedStatus(statusName);
     setStatusIndex(statuses.findIndex(s => s.name === statusName));
+    setStep('poc');
+    setTimeout(() => pocSelectRef.current?.focus(), 50);
+  };
+
+  const handlePOCSelect = (personId) => {
+    if (personId === null || personId === '') {
+      setSelectedPOC([]);
+      setPocIndex(-1);
+    } else {
+      setSelectedPOC([parseInt(personId)]);
+      setPocIndex((persons || []).findIndex(p => p.id === parseInt(personId)));
+    }
     createTask();
   };
 
@@ -1424,8 +1523,8 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
           value={taskName}
           onChange={(e) => setTaskName(e.target.value)}
           onKeyDown={handleTaskKeyDown}
-          placeholder="Add new task to this project..."
-          className={`flex-1 min-w-[300px] px-4 py-3 rounded-lg border-none outline-none text-sm transition-all ${
+          placeholder="Add new task..."
+          className={`flex-1 min-w-[200px] px-4 py-3 rounded-lg border-none outline-none text-sm transition-all ${
             step === 'task'
               ? 'bg-[#F5F5F7] focus:ring-2 focus:ring-[#0066CC] focus:bg-white'
               : 'bg-[#F9F9F9] text-gray-600'
@@ -1434,7 +1533,7 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
         />
 
         {/* Type Selection */}
-        {(step === 'type' || (step !== 'task' && selectedType)) && (
+        {(step === 'type' || step === 'status' || step === 'poc') && (
           <div className="relative">
             <select
               ref={typeSelectRef}
@@ -1447,7 +1546,7 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
                   : 'bg-[#F9F9F9] border-gray-200 text-white font-medium'
               }`}
               style={{
-                backgroundColor: step === 'type' || selectedType ? getTypeColor(selectedType) : undefined,
+                backgroundColor: getTypeColor(selectedType),
                 color: 'white'
               }}
             >
@@ -1459,7 +1558,7 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
         )}
 
         {/* Status Selection */}
-        {(step === 'status') && (
+        {(step === 'status' || step === 'poc') && (
           <div className="relative">
             <select
               ref={statusSelectRef}
@@ -1472,12 +1571,30 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
                   : 'bg-[#F9F9F9] border-gray-200 text-white font-medium'
               }`}
               style={{
-                backgroundColor: step === 'status' || selectedStatus ? getStatusColor(selectedStatus) : undefined,
+                backgroundColor: getStatusColor(selectedStatus),
                 color: getStatusColor(selectedStatus) === '#FFD93D' ? '#1D1D1F' : 'white'
               }}
             >
               {statuses.map(status => (
                 <option key={status.name} value={status.name}>{status.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* POC Selection */}
+        {step === 'poc' && (
+          <div className="relative">
+            <select
+              ref={pocSelectRef}
+              value={selectedPOC[0] || ''}
+              onChange={(e) => handlePOCSelect(e.target.value)}
+              onKeyDown={handlePOCKeyDown}
+              className="px-4 py-3 rounded-lg border border-[#0066CC] outline-none focus:ring-2 focus:ring-[#0066CC] text-sm cursor-pointer min-w-[140px] shadow-sm bg-white"
+            >
+              <option value="">- (Unassigned)</option>
+              {(persons || []).map(person => (
+                <option key={person.id} value={person.id}>{person.name}</option>
               ))}
             </select>
           </div>
@@ -1500,11 +1617,218 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
           {step === 'status' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Use ↑↓ arrows, press Enter to create
+              Use ↑↓ arrows, press Enter
+            </span>
+          )}
+          {step === 'poc' && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
+              Select POC, press Enter to create
             </span>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Person Task Creator (for Person View - pre-assigns to a specific person)
+function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor, getTypeColor, onAdd, defaultPersonId, personName }) {
+  const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'project'
+  const [taskName, setTaskName] = useState('');
+  const [selectedType, setSelectedType] = useState('Regular');
+  const [selectedStatus, setSelectedStatus] = useState('My action');
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
+  const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
+  const [projectIndex, setProjectIndex] = useState(-1);
+
+  const taskInputRef = useRef(null);
+  const typeSelectRef = useRef(null);
+  const statusSelectRef = useRef(null);
+  const projectSelectRef = useRef(null);
+
+  const projectOptions = [{ id: null, name: 'No Project' }, ...projects];
+
+  const handleTaskKeyDown = (e) => {
+    if (e.key === 'Enter' && taskName.trim()) {
+      setStep('type');
+      setTimeout(() => typeSelectRef.current?.focus(), 50);
+    }
+  };
+
+  const handleTypeKeyDown = (e) => {
+    e.preventDefault();
+    if (e.key === 'ArrowUp') {
+      const newIndex = Math.max(0, typeIndex - 1);
+      setTypeIndex(newIndex);
+      setSelectedType(types[newIndex]);
+    } else if (e.key === 'ArrowDown') {
+      const newIndex = Math.min(types.length - 1, typeIndex + 1);
+      setTypeIndex(newIndex);
+      setSelectedType(types[newIndex]);
+    } else if (e.key === 'Enter') {
+      setStep('status');
+      setTimeout(() => statusSelectRef.current?.focus(), 50);
+    } else if (e.key === 'Escape') {
+      resetForm();
+    }
+  };
+
+  const handleStatusKeyDown = (e) => {
+    e.preventDefault();
+    if (e.key === 'ArrowUp') {
+      const newIndex = Math.max(0, statusIndex - 1);
+      setStatusIndex(newIndex);
+      setSelectedStatus(statuses[newIndex].name);
+    } else if (e.key === 'ArrowDown') {
+      const newIndex = Math.min(statuses.length - 1, statusIndex + 1);
+      setStatusIndex(newIndex);
+      setSelectedStatus(statuses[newIndex].name);
+    } else if (e.key === 'Enter') {
+      setStep('project');
+      setTimeout(() => projectSelectRef.current?.focus(), 50);
+    } else if (e.key === 'Escape') {
+      resetForm();
+    }
+  };
+
+  const handleProjectKeyDown = (e) => {
+    e.preventDefault();
+    if (e.key === 'ArrowUp') {
+      const newIndex = Math.max(0, projectIndex - 1);
+      setProjectIndex(newIndex);
+      setSelectedProject(projectOptions[newIndex].id);
+    } else if (e.key === 'ArrowDown') {
+      const newIndex = Math.min(projectOptions.length - 1, projectIndex + 1);
+      setProjectIndex(newIndex);
+      setSelectedProject(projectOptions[newIndex].id);
+    } else if (e.key === 'Enter') {
+      createTask();
+    } else if (e.key === 'Escape') {
+      resetForm();
+    }
+  };
+
+  const createTask = () => {
+    if (!taskName.trim()) return;
+
+    const oneWeekLater = addWorkingDays(new Date(), 7);
+    const dueDate = formatDateToDDMMM(oneWeekLater);
+
+    const newTask = {
+      name: taskName.trim(),
+      projectId: selectedProject,
+      type: selectedType,
+      status: selectedStatus,
+      dueDate: dueDate,
+      personIds: defaultPersonId ? [defaultPersonId] : []
+    };
+
+    onAdd(newTask);
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setStep('task');
+    setTaskName('');
+    setSelectedType('Regular');
+    setSelectedStatus('My action');
+    setSelectedProject(null);
+    setTypeIndex(types.indexOf('Regular'));
+    setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
+    setProjectIndex(-1);
+  };
+
+  const handleTypeSelect = (type) => {
+    setSelectedType(type);
+    setTypeIndex(types.indexOf(type));
+    setStep('status');
+    setTimeout(() => statusSelectRef.current?.focus(), 50);
+  };
+
+  const handleStatusSelect = (statusName) => {
+    setSelectedStatus(statusName);
+    setStatusIndex(statuses.findIndex(s => s.name === statusName));
+    setStep('project');
+    setTimeout(() => projectSelectRef.current?.focus(), 50);
+  };
+
+  const handleProjectSelect = (projectId) => {
+    setSelectedProject(projectId);
+    setProjectIndex(projectOptions.findIndex(p => p.id === projectId));
+    createTask();
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <input
+        ref={taskInputRef}
+        type="text"
+        value={taskName}
+        onChange={(e) => setTaskName(e.target.value)}
+        onKeyDown={handleTaskKeyDown}
+        placeholder={`Add task for ${personName}...`}
+        className={`flex-1 min-w-[200px] px-3 py-2 rounded-lg border-none outline-none text-sm transition-all ${
+          step === 'task'
+            ? 'bg-[#F5F5F7] focus:ring-2 focus:ring-[#0066CC] focus:bg-white'
+            : 'bg-[#F9F9F9] text-gray-600'
+        }`}
+      />
+
+      {(step === 'type' || step === 'status' || step === 'project') && (
+        <select
+          ref={typeSelectRef}
+          value={selectedType}
+          onChange={(e) => handleTypeSelect(e.target.value)}
+          onKeyDown={handleTypeKeyDown}
+          className="px-3 py-2 rounded-lg border outline-none text-sm cursor-pointer min-w-[100px]"
+          style={{ backgroundColor: getTypeColor(selectedType), color: 'white' }}
+        >
+          {types.map(type => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
+      )}
+
+      {(step === 'status' || step === 'project') && (
+        <select
+          ref={statusSelectRef}
+          value={selectedStatus}
+          onChange={(e) => handleStatusSelect(e.target.value)}
+          onKeyDown={handleStatusKeyDown}
+          className="px-3 py-2 rounded-lg border outline-none text-sm cursor-pointer min-w-[120px]"
+          style={{
+            backgroundColor: getStatusColor(selectedStatus),
+            color: getStatusColor(selectedStatus) === '#FFD93D' ? '#1D1D1F' : 'white'
+          }}
+        >
+          {statuses.map(status => (
+            <option key={status.name} value={status.name}>{status.name}</option>
+          ))}
+        </select>
+      )}
+
+      {step === 'project' && (
+        <select
+          ref={projectSelectRef}
+          value={selectedProject || ''}
+          onChange={(e) => handleProjectSelect(e.target.value || null)}
+          onKeyDown={handleProjectKeyDown}
+          className="px-3 py-2 bg-white rounded-lg border border-[#0066CC] outline-none text-sm cursor-pointer min-w-[120px]"
+        >
+          {projectOptions.map(project => (
+            <option key={project.id || 'none'} value={project.id || ''}>{project.name}</option>
+          ))}
+        </select>
+      )}
+
+      <span className="text-xs text-gray-400">
+        {step === 'task' && 'Enter to continue'}
+        {step === 'type' && '↑↓ Enter'}
+        {step === 'status' && '↑↓ Enter'}
+        {step === 'project' && '↑↓ Enter to create'}
+      </span>
     </div>
   );
 }
@@ -1634,7 +1958,7 @@ function TaskView({
 
 
 // Project Task Table Row Component (for Project View table)
-function ProjectTaskTableRow({ task, types, statuses, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask }) {
+function ProjectTaskTableRow({ task, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.name);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -1743,6 +2067,14 @@ function ProjectTaskTableRow({ task, types, statuses, getStatusColor, getTypeCol
             )}
           </button>
         )}
+      </td>
+      <td className="px-4 py-3">
+        <POCMultiSelect
+          selectedIds={task.personIds || []}
+          persons={persons || []}
+          onChange={(newPersonIds) => updateTask(task.id, 'personIds', newPersonIds)}
+          compact={true}
+        />
       </td>
       <td className="px-4 py-3">
         <input
@@ -2333,7 +2665,7 @@ function MultiSelect({ label, options, selected, onChange, useIds = false }) {
 }
 
 // Calendar View Component
-function CalendarView({ projects, tasks, types, statuses, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask, goToProject }) {
+function CalendarView({ projects, tasks, types, statuses, persons, getStatusColor, getTypeColor, getPersonName, updateTask, toggleTaskDone, deleteTask, goToProject }) {
   const [calendarView, setCalendarView] = useState('week'); // 'week' or 'month'
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -2471,6 +2803,11 @@ function CalendarView({ projects, tasks, types, statuses, getStatusColor, getTyp
                         const project = projects.find(p => p.id === task.projectId);
                         const statusColor = getStatusColor(task.status);
                         
+                        // Get person names for this task
+                        const taskPersonNames = (task.personIds || [])
+                          .map(id => getPersonName(id))
+                          .filter(Boolean);
+                        
                         return (
                           <div
                             key={task.id}
@@ -2487,6 +2824,12 @@ function CalendarView({ projects, tasks, types, statuses, getStatusColor, getTyp
                             {project && (
                               <div className="text-gray-600 truncate text-xs hidden sm:block" title={project.name}>
                                 {project.name}
+                              </div>
+                            )}
+                            {taskPersonNames.length > 0 && (
+                              <div className="text-[#0066CC] truncate text-xs hidden sm:flex items-center gap-0.5 mt-0.5" title={taskPersonNames.join(', ')}>
+                                <User className="w-3 h-3 flex-shrink-0" />
+                                {taskPersonNames.join(', ')}
                               </div>
                             )}
                           </div>
@@ -2517,7 +2860,8 @@ function PersonView({
   updateTask, 
   toggleTaskDone, 
   deleteTask, 
-  goToProject 
+  goToProject,
+  addTaskAdvanced
 }) {
   // Track which persons are expanded (default: all expanded)
   const [expandedPersons, setExpandedPersons] = useState(
@@ -2691,6 +3035,23 @@ function PersonView({
                 {isExpanded && personTasks.length === 0 && (
                   <div className="border-t border-gray-100 p-4 text-center text-gray-400 text-sm">
                     No tasks assigned to {person.name}
+                  </div>
+                )}
+
+                {/* Add task for this person */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 p-3">
+                    <PersonTaskCreator
+                      projects={projects}
+                      types={types}
+                      statuses={statuses}
+                      persons={persons}
+                      getStatusColor={getStatusColor}
+                      getTypeColor={getTypeColor}
+                      onAdd={addTaskAdvanced}
+                      defaultPersonId={person.id}
+                      personName={person.name}
+                    />
                   </div>
                 )}
               </div>
@@ -2868,13 +3229,24 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPer
               {persons.map(person => (
                 <div key={person.name} className="flex items-center justify-between p-2 bg-[#F5F5F7] rounded-lg">
                   <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={person.color || '#CCCCCC'}
-                      onChange={(e) => updatePersonColor(person.name, e.target.value)}
-                      className="w-7 h-7 rounded cursor-pointer border-2 border-gray-300"
-                      title="Set color (optional)"
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="color"
+                        value={person.color || '#CCCCCC'}
+                        onChange={(e) => updatePersonColor(person.name, e.target.value)}
+                        className="w-7 h-7 rounded cursor-pointer border-2 border-gray-300"
+                        title="Set color"
+                      />
+                      {person.color && (
+                        <button
+                          onClick={() => updatePersonColor(person.name, null)}
+                          className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors"
+                          title="Remove color"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                     <div
                       className="px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1"
                       style={{
