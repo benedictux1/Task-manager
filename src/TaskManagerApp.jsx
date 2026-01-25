@@ -1081,16 +1081,20 @@ function SizeDropdownSelect({ options, onSelect, editorRef }) {
 
 // Inline Task Creator Component
 function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor, getTypeColor, onAdd }) {
+  // Find "General Tasks" project as default
+  const generalTasksProject = projects.find(p => p.name === 'General Tasks');
+  const defaultProjectId = generalTasksProject?.id || (projects.length > 0 ? projects[0].id : null);
+  
   const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'poc', 'project'
   const [taskName, setTaskName] = useState('');
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
   const [selectedPOC, setSelectedPOC] = useState([]); // Array of person IDs
-  const [selectedProject, setSelectedProject] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(defaultProjectId);
   const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
   const [pocIndex, setPocIndex] = useState(-1); // -1 means "unassigned"
-  const [projectIndex, setProjectIndex] = useState(-1);
+  const [projectIndex, setProjectIndex] = useState(projects.findIndex(p => p.id === defaultProjectId));
 
   const taskInputRef = useRef(null);
   const typeSelectRef = useRef(null);
@@ -1098,7 +1102,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const pocSelectRef = useRef(null);
   const projectSelectRef = useRef(null);
 
-  const projectOptions = [{ id: null, name: 'No Project' }, ...projects];
+  const projectOptions = [...projects]; // No "No Project" option - always assign to a project
   const pocOptions = [{ id: null, name: '- (Unassigned)' }, ...(persons || [])];
 
   const handleTaskKeyDown = (e) => {
@@ -1188,9 +1192,12 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     const oneWeekLater = addWorkingDays(new Date(), 7);
     const dueDate = formatDateToDDMMM(oneWeekLater);
 
+    // Use selectedProject, or fall back to defaultProjectId
+    const projectId = selectedProject || defaultProjectId;
+
     const newTask = {
       name: taskName.trim(),
-      projectId: selectedProject,
+      projectId: projectId,
       type: selectedType,
       status: selectedStatus,
       dueDate: dueDate,
@@ -1207,11 +1214,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setSelectedType('Regular');
     setSelectedStatus('My action');
     setSelectedPOC([]);
-    setSelectedProject(null);
+    setSelectedProject(defaultProjectId);
     setTypeIndex(types.indexOf('Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
     setPocIndex(-1);
-    setProjectIndex(-1);
+    setProjectIndex(projects.findIndex(p => p.id === defaultProjectId));
     setTimeout(() => taskInputRef.current?.focus(), 50);
   };
 
@@ -1378,7 +1385,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
           {step === 'poc' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Select POC. Enter to create, Tab for project
+              Enter to create (General Tasks), Tab to change project
             </span>
           )}
           {step === 'project' && (
