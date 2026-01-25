@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2 } from 'lucide-react';
+import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2, User, Users, ChevronsUp, ChevronsDown } from 'lucide-react';
 import { getWorkingDaysUntilDue, formatDateToDDMMM, parseDueDate, addWorkingDays } from './utils/dateUtils';
-import { projectsAPI, tasksAPI, settingsAPI } from './api';
+import { projectsAPI, tasksAPI, settingsAPI, personsAPI } from './api';
 
 // Main App Component
 export default function TaskManagerApp() {
@@ -28,9 +28,22 @@ export default function TaskManagerApp() {
   const [typeColors, setTypeColors] = useState(defaultTypeColors);
 
   const [statuses, setStatuses] = useState([]);
+  
+  // Persons (POC - Point of Contact)
+  const [persons, setPersons] = useState([]);
 
   const getTypeColor = (typeName) => {
     return typeColors[typeName] || '#0066CC';
+  };
+  
+  const getPersonColor = (personId) => {
+    const person = persons.find(p => p.id === personId);
+    return person?.color || null; // null means no color (colorless default)
+  };
+  
+  const getPersonName = (personId) => {
+    const person = persons.find(p => p.id === personId);
+    return person?.name || '';
   };
 
   const [projects, setProjects] = useState([]);
@@ -82,6 +95,14 @@ export default function TaskManagerApp() {
         ]);
       }
       
+      // Set persons (POC)
+      if (settingsData.persons && settingsData.persons.length > 0) {
+        setPersons(settingsData.persons);
+      } else {
+        // Fallback to empty (will be populated from Settings)
+        setPersons([]);
+      }
+      
       // Set selected project to first one if not set
       if (projectsData.length > 0 && !selectedProjectId) {
         setSelectedProjectId(projectsData[0].id);
@@ -98,6 +119,7 @@ export default function TaskManagerApp() {
         { name: 'My action', color: '#FFD93D' },
         { name: 'Done', color: '#6BCF7F' }
       ]);
+      setPersons([]);
     } finally {
       setIsLoading(false);
     }
@@ -307,6 +329,17 @@ export default function TaskManagerApp() {
             >
               Calendar
             </button>
+            <button
+              onClick={() => setCurrentView('person')}
+              className={`px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                currentView === 'person'
+                  ? 'bg-white text-[#0066CC] shadow-sm'
+                  : 'text-gray-600 hover:text-[#1D1D1F]'
+              }`}
+            >
+              <span className="hidden sm:inline">Person View</span>
+              <span className="sm:hidden">Person</span>
+            </button>
           </div>
           <button
             onClick={() => setShowSettings(true)}
@@ -328,8 +361,11 @@ export default function TaskManagerApp() {
           tasks={tasks}
           types={types}
           statuses={statuses}
+          persons={persons}
           getStatusColor={getStatusColor}
           getTypeColor={getTypeColor}
+          getPersonColor={getPersonColor}
+          getPersonName={getPersonName}
           addTask={addTask}
           addTaskAdvanced={addTaskAdvanced}
           updateTask={updateTask}
@@ -346,22 +382,42 @@ export default function TaskManagerApp() {
           tasks={tasks}
           types={types}
           statuses={statuses}
+          persons={persons}
           getStatusColor={getStatusColor}
           getTypeColor={getTypeColor}
+          getPersonColor={getPersonColor}
+          getPersonName={getPersonName}
           updateTask={updateTask}
           toggleTaskDone={toggleTaskDone}
           deleteTask={deleteTask}
           goToProject={goToProject}
           addTaskAdvanced={addTaskAdvanced}
         />
-      ) : (
+      ) : currentView === 'calendar' ? (
         <CalendarView
           projects={projects}
           tasks={tasks}
           types={types}
           statuses={statuses}
+          persons={persons}
           getStatusColor={getStatusColor}
           getTypeColor={getTypeColor}
+          getPersonName={getPersonName}
+          updateTask={updateTask}
+          toggleTaskDone={toggleTaskDone}
+          deleteTask={deleteTask}
+          goToProject={goToProject}
+        />
+      ) : (
+        <PersonView
+          projects={projects}
+          tasks={tasks}
+          persons={persons}
+          types={types}
+          statuses={statuses}
+          getStatusColor={getStatusColor}
+          getTypeColor={getTypeColor}
+          getPersonColor={getPersonColor}
           updateTask={updateTask}
           toggleTaskDone={toggleTaskDone}
           deleteTask={deleteTask}
@@ -375,6 +431,8 @@ export default function TaskManagerApp() {
           setTypes={setTypes}
           statuses={statuses}
           setStatuses={setStatuses}
+          persons={persons}
+          setPersons={setPersons}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -1453,11 +1511,12 @@ function ProjectInlineTaskCreator({ types, statuses, getStatusColor, getTypeColo
 
 // Task View Component
 function TaskView({
-  projects, tasks, types, statuses, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask,
-  goToProject, addTaskAdvanced
+  projects, tasks, types, statuses, persons, getStatusColor, getTypeColor, getPersonColor, getPersonName,
+  updateTask, toggleTaskDone, deleteTask, goToProject, addTaskAdvanced
 }) {
   const [filterType, setFilterType] = useState([]);
   const [filterStatus, setFilterStatus] = useState([]);
+  const [filterPOC, setFilterPOC] = useState([]);
   const [filterProject, setFilterProject] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1466,6 +1525,12 @@ function TaskView({
       if (filterType.length > 0 && !filterType.includes(task.type)) return false;
       if (filterStatus.length > 0 && !filterStatus.includes(task.status)) return false;
       if (filterProject.length > 0 && !filterProject.includes(task.projectId)) return false;
+      // POC filter - check if task has any of the filtered person IDs
+      if (filterPOC.length > 0) {
+        const taskPersonIds = task.personIds || [];
+        const hasMatchingPOC = filterPOC.some(pocId => taskPersonIds.includes(pocId));
+        if (!hasMatchingPOC) return false;
+      }
       if (searchQuery && !task.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
@@ -1488,7 +1553,7 @@ function TaskView({
     });
 
     return filtered;
-  }, [tasks, filterType, filterStatus, filterProject, searchQuery, projects]);
+  }, [tasks, filterType, filterStatus, filterProject, filterPOC, searchQuery, projects]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1504,6 +1569,7 @@ function TaskView({
           <MultiSelect label="Type" options={types} selected={filterType} onChange={setFilterType} />
           <MultiSelect label="Status" options={statuses.map(s => s.name)} selected={filterStatus} onChange={setFilterStatus} />
           <MultiSelect label="Project" options={[{id: null, name: 'No Project'}, ...projects.map(p => ({ id: p.id, name: p.name }))]} selected={filterProject} onChange={setFilterProject} useIds={true} />
+          <MultiSelect label="POC" options={persons.map(p => ({ id: p.id, name: p.name }))} selected={filterPOC} onChange={setFilterPOC} useIds={true} />
         </div>
         
         {/* Full-width task creator */}
@@ -1512,6 +1578,7 @@ function TaskView({
             projects={projects}
             types={types}
             statuses={statuses}
+            persons={persons}
             getStatusColor={getStatusColor}
             getTypeColor={getTypeColor}
             onAdd={addTaskAdvanced}
@@ -1531,6 +1598,7 @@ function TaskView({
                   <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Type</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Status</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Due In</th>
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">POC</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F] w-48">Notes</th>
                   <th className="w-12 px-4 py-3"></th>
                 </tr>
@@ -1543,6 +1611,7 @@ function TaskView({
                     project={projects.find(p => p.id === task.projectId)}
                     types={types}
                     statuses={statuses}
+                    persons={persons}
                     getStatusColor={getStatusColor}
                     getTypeColor={getTypeColor}
                     updateTask={updateTask}
@@ -1818,7 +1887,7 @@ function TaskRow({ task, types, statuses, getStatusColor, getTypeColor, updateTa
 }
 
 // Task Table Row Component (for Task View)
-function TaskTableRow({ task, project, types, statuses, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask, onProjectClick }) {
+function TaskTableRow({ task, project, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask, onProjectClick }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.name);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -1939,6 +2008,14 @@ function TaskTableRow({ task, project, types, statuses, getStatusColor, getTypeC
             )}
           </button>
         )}
+      </td>
+      <td className="px-4 py-3">
+        <POCMultiSelect
+          selectedIds={task.personIds || []}
+          persons={persons || []}
+          onChange={(newIds) => updateTask(task.id, 'personIds', newIds)}
+          compact={true}
+        />
       </td>
       <td className="px-4 py-3">
         <input
@@ -2080,6 +2157,112 @@ function StatusDropdown({ value, options, onChange, getStatusColor, className = 
                 <span className="text-[#1D1D1F]">{option.name}</span>
               </button>
             ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// POC Multi-Select Component (for selecting persons/POC on tasks)
+function POCMultiSelect({ selectedIds = [], persons, onChange, compact = false }) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const selectedPersons = persons.filter(p => selectedIds.includes(p.id));
+  const displayText = selectedPersons.length === 0 
+    ? '-' 
+    : selectedPersons.length === 1 
+      ? selectedPersons[0].name 
+      : `${selectedPersons.length} people`;
+
+  const togglePerson = (personId) => {
+    if (selectedIds.includes(personId)) {
+      onChange(selectedIds.filter(id => id !== personId));
+    } else {
+      onChange([...selectedIds, personId]);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between gap-1 px-2 py-1 rounded-lg border border-gray-200 hover:border-[#0066CC] transition-colors bg-white ${
+          compact ? 'text-xs' : 'text-sm'
+        }`}
+      >
+        <div className="flex items-center gap-1 overflow-hidden">
+          {selectedPersons.length > 0 ? (
+            <div className="flex items-center gap-1">
+              {selectedPersons.slice(0, 2).map(person => (
+                <span
+                  key={person.id}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs"
+                  style={{
+                    backgroundColor: person.color || '#E5E5E5',
+                    color: person.color ? 'white' : '#1D1D1F'
+                  }}
+                >
+                  <User className="w-2.5 h-2.5" />
+                  {person.name}
+                </span>
+              ))}
+              {selectedPersons.length > 2 && (
+                <span className="text-gray-500 text-xs">+{selectedPersons.length - 2}</span>
+              )}
+            </div>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </div>
+        <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0" />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 max-h-60 overflow-y-auto">
+            {/* Unassigned option */}
+            <button
+              onClick={() => {
+                onChange([]);
+                setIsOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 hover:bg-[#F5F5F7] text-sm flex items-center gap-2 ${
+                selectedIds.length === 0 ? 'bg-[#F5F5F7]' : ''
+              }`}
+            >
+              <span className="text-gray-400">-</span>
+              <span className="text-gray-500">Unassigned</span>
+            </button>
+            
+            <div className="border-t border-gray-100 my-1" />
+            
+            {persons.map(person => (
+              <button
+                key={person.id}
+                onClick={() => togglePerson(person.id)}
+                className={`w-full text-left px-3 py-2 hover:bg-[#F5F5F7] text-sm flex items-center gap-2 ${
+                  selectedIds.includes(person.id) ? 'bg-blue-50' : ''
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(person.id)}
+                  onChange={() => {}}
+                  className="w-4 h-4 rounded border-gray-300 text-[#0066CC]"
+                />
+                <span
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: person.color || '#CCCCCC' }}
+                />
+                <span className="text-[#1D1D1F]">{person.name}</span>
+              </button>
+            ))}
+            
+            {persons.length === 0 && (
+              <p className="px-3 py-2 text-sm text-gray-400 italic">No people in Settings</p>
+            )}
           </div>
         </>
       )}
@@ -2321,10 +2504,220 @@ function CalendarView({ projects, tasks, types, statuses, getStatusColor, getTyp
   );
 }
 
+// Person View Component - Accordion layout showing tasks grouped by person
+function PersonView({ 
+  projects, 
+  tasks, 
+  persons, 
+  types, 
+  statuses, 
+  getStatusColor, 
+  getTypeColor, 
+  getPersonColor, 
+  updateTask, 
+  toggleTaskDone, 
+  deleteTask, 
+  goToProject 
+}) {
+  // Track which persons are expanded (default: all expanded)
+  const [expandedPersons, setExpandedPersons] = useState(
+    persons.reduce((acc, person) => ({ ...acc, [person.id]: true }), {})
+  );
+
+  // Toggle individual person
+  const togglePerson = (personId) => {
+    setExpandedPersons(prev => ({
+      ...prev,
+      [personId]: !prev[personId]
+    }));
+  };
+
+  // Expand all
+  const expandAll = () => {
+    setExpandedPersons(
+      persons.reduce((acc, person) => ({ ...acc, [person.id]: true }), {})
+    );
+  };
+
+  // Collapse all
+  const collapseAll = () => {
+    setExpandedPersons(
+      persons.reduce((acc, person) => ({ ...acc, [person.id]: false }), {})
+    );
+  };
+
+  // Get tasks for a person
+  const getTasksForPerson = (personId) => {
+    return tasks.filter(task => 
+      task.personIds && task.personIds.includes(personId)
+    );
+  };
+
+  // Get project name
+  const getProjectName = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || 'Unknown';
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-[#F5F5F7]">
+      <div className="mx-4 py-4">
+        {/* Header with expand/collapse buttons */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-[#1D1D1F] flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Tasks by Person
+          </h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={expandAll}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-[#F5F5F7] transition-colors"
+              title="Expand all"
+            >
+              <ChevronsDown className="w-4 h-4" />
+              <span className="hidden sm:inline">Expand All</span>
+            </button>
+            <button
+              onClick={collapseAll}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-[#F5F5F7] transition-colors"
+              title="Collapse all"
+            >
+              <ChevronsUp className="w-4 h-4" />
+              <span className="hidden sm:inline">Collapse All</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Person accordion cards */}
+        <div className="space-y-3">
+          {persons.map(person => {
+            const personTasks = getTasksForPerson(person.id);
+            const isExpanded = expandedPersons[person.id] !== false; // Default to expanded
+
+            return (
+              <div key={person.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                {/* Person header */}
+                <button
+                  onClick={() => togglePerson(person.id)}
+                  className="w-full flex items-center justify-between p-4 hover:bg-[#F5F5F7] transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center"
+                      style={{
+                        backgroundColor: person.color || '#E5E5E5',
+                        color: person.color ? 'white' : '#1D1D1F'
+                      }}
+                    >
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="font-semibold text-[#1D1D1F]">{person.name}</h3>
+                      <p className="text-sm text-gray-500">{personTasks.length} task{personTasks.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <ChevronDown 
+                    className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
+                  />
+                </button>
+
+                {/* Tasks list */}
+                {isExpanded && personTasks.length > 0 && (
+                  <div className="border-t border-gray-100">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-[#F5F5F7] text-xs text-gray-500 uppercase">
+                          <th className="text-left px-4 py-2 font-medium">Task</th>
+                          <th className="text-left px-4 py-2 font-medium">Project</th>
+                          <th className="text-left px-4 py-2 font-medium">Type</th>
+                          <th className="text-left px-4 py-2 font-medium">Status</th>
+                          <th className="text-left px-4 py-2 font-medium">Due In</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {personTasks.map(task => (
+                          <tr key={task.id} className="border-t border-gray-100 hover:bg-[#F5F5F7]">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={task.status === 'Done'}
+                                  onChange={() => toggleTaskDone(task.id)}
+                                  className="w-4 h-4 rounded border-gray-300 text-[#0066CC]"
+                                />
+                                <span className={`text-sm ${task.status === 'Done' ? 'line-through text-gray-400' : 'text-[#1D1D1F]'}`}>
+                                  {task.name}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() => goToProject(task.projectId)}
+                                className="text-sm text-[#0066CC] hover:underline"
+                              >
+                                {getProjectName(task.projectId)}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className="px-2 py-1 rounded text-xs font-medium"
+                                style={{ backgroundColor: getTypeColor(task.type), color: 'white' }}
+                              >
+                                {task.type}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className="px-2 py-1 rounded text-xs font-medium"
+                                style={{ 
+                                  backgroundColor: getStatusColor(task.status), 
+                                  color: getStatusColor(task.status) === '#FFD93D' ? '#1D1D1F' : 'white' 
+                                }}
+                              >
+                                {task.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {task.dueDate ? getWorkingDaysUntilDue(task.dueDate) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {isExpanded && personTasks.length === 0 && (
+                  <div className="border-t border-gray-100 p-4 text-center text-gray-400 text-sm">
+                    No tasks assigned to {person.name}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Empty state when no persons */}
+          {persons.length === 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h3 className="text-lg font-medium text-[#1D1D1F] mb-2">No People Added</h3>
+              <p className="text-gray-500 text-sm">
+                Add people in Settings to track tasks by contact person.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Settings Modal Component (SMALLER - 20% reduction)
-function SettingsModal({ types, setTypes, statuses, setStatuses, onClose }) {
+function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPersons, onClose }) {
   const [newType, setNewType] = useState('');
   const [newStatus, setNewStatus] = useState({ name: '', color: '#0066CC' });
+  const [newPerson, setNewPerson] = useState({ name: '', color: '' });
 
   const addType = () => {
     if (newType.trim() && !types.includes(newType.trim())) {
@@ -2354,6 +2747,28 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, onClose }) {
     ));
   };
 
+  // Person functions
+  const addPerson = () => {
+    if (newPerson.name.trim() && !persons.find(p => p.name === newPerson.name.trim())) {
+      setPersons([...persons, { 
+        name: newPerson.name.trim(), 
+        color: newPerson.color || null,
+        order: persons.length 
+      }]);
+      setNewPerson({ name: '', color: '' });
+    }
+  };
+
+  const removePerson = (personName) => {
+    setPersons(persons.filter(p => p.name !== personName));
+  };
+
+  const updatePersonColor = (personName, color) => {
+    setPersons(persons.map(p =>
+      p.name === personName ? { ...p, color: color || null } : p
+    ));
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md my-8 flex flex-col">
@@ -2365,6 +2780,7 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, onClose }) {
         </div>
 
         <div className="p-4 space-y-6 max-h-[60vh] overflow-y-auto">
+          {/* Task Types Section */}
           <div>
             <h3 className="text-sm font-semibold text-[#1D1D1F] mb-3">Task Types</h3>
             <div className="space-y-1.5 mb-3">
@@ -2392,6 +2808,7 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, onClose }) {
             </div>
           </div>
 
+          {/* Task Statuses Section */}
           <div>
             <h3 className="text-sm font-semibold text-[#1D1D1F] mb-3">Task Statuses</h3>
             <div className="space-y-1.5 mb-3">
@@ -2439,6 +2856,70 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, onClose }) {
                 Add
               </button>
             </div>
+          </div>
+
+          {/* People (POC) Section */}
+          <div>
+            <h3 className="text-sm font-semibold text-[#1D1D1F] mb-3 flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              People (Point of Contact)
+            </h3>
+            <div className="space-y-1.5 mb-3">
+              {persons.map(person => (
+                <div key={person.name} className="flex items-center justify-between p-2 bg-[#F5F5F7] rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={person.color || '#CCCCCC'}
+                      onChange={(e) => updatePersonColor(person.name, e.target.value)}
+                      className="w-7 h-7 rounded cursor-pointer border-2 border-gray-300"
+                      title="Set color (optional)"
+                    />
+                    <div
+                      className="px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1"
+                      style={{
+                        backgroundColor: person.color || '#F5F5F7',
+                        color: person.color ? 'white' : '#1D1D1F',
+                        border: person.color ? 'none' : '1px solid #E5E5E5'
+                      }}
+                    >
+                      <User className="w-3 h-3" />
+                      {person.name}
+                    </div>
+                    {!person.color && (
+                      <span className="text-xs text-gray-400">(no color)</span>
+                    )}
+                  </div>
+                  <button onClick={() => removePerson(person.name)} className="p-1 hover:bg-red-100 rounded transition-colors">
+                    <X className="w-3.5 h-3.5 text-red-500" />
+                  </button>
+                </div>
+              ))}
+              {persons.length === 0 && (
+                <p className="text-sm text-gray-400 italic py-2">No people added yet</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newPerson.name}
+                onChange={(e) => setNewPerson({ ...newPerson, name: e.target.value })}
+                onKeyPress={(e) => e.key === 'Enter' && addPerson()}
+                placeholder="Person name..."
+                className="flex-1 px-3 py-2 text-sm bg-[#F5F5F7] rounded-lg border-none outline-none focus:ring-2 focus:ring-[#0066CC] text-[#1D1D1F]"
+              />
+              <input
+                type="color"
+                value={newPerson.color || '#CCCCCC'}
+                onChange={(e) => setNewPerson({ ...newPerson, color: e.target.value })}
+                className="w-10 h-10 rounded cursor-pointer border-2 border-gray-300"
+                title="Color (optional)"
+              />
+              <button onClick={addPerson} className="px-4 py-2 text-sm bg-[#0066CC] text-white rounded-lg hover:bg-[#0052A3] transition-colors font-medium">
+                Add
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">Color is optional - people without color will show as gray.</p>
           </div>
         </div>
 

@@ -59,6 +59,9 @@ export const tasksAPI = {
   // Get tasks by project
   getByProject: (projectId) => fetchAPI(`/projects/${projectId}/tasks`),
   
+  // Get tasks grouped by person (for Person View)
+  getByPerson: () => fetchAPI('/tasks/by-person'),
+  
   // Create new task
   create: (data) => fetchAPI('/tasks', {
     method: 'POST',
@@ -77,10 +80,34 @@ export const tasksAPI = {
   }),
 };
 
+// ==================== PERSONS (POC) ====================
+
+export const personsAPI = {
+  // Get all persons
+  getAll: () => fetchAPI('/persons'),
+  
+  // Create new person
+  create: (data) => fetchAPI('/persons', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  
+  // Update person
+  update: (id, data) => fetchAPI(`/persons/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  
+  // Delete person
+  delete: (id) => fetchAPI(`/persons/${id}`, {
+    method: 'DELETE',
+  }),
+};
+
 // ==================== SETTINGS ====================
 
 export const settingsAPI = {
-  // Get all settings (types and statuses)
+  // Get all settings (types, statuses, and persons)
   getAll: () => fetchAPI('/settings'),
   
   // Update types
@@ -93,5 +120,11 @@ export const settingsAPI = {
   updateStatuses: (statuses) => fetchAPI('/settings/statuses', {
     method: 'PUT',
     body: JSON.stringify({ statuses }),
+  }),
+  
+  // Update persons
+  updatePersons: (persons) => fetchAPI('/settings/persons', {
+    method: 'PUT',
+    body: JSON.stringify({ persons }),
   }),
 };

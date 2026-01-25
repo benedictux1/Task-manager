@@ -5,11 +5,13 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Clear existing data
+  // Clear existing data (order matters due to foreign keys)
+  await prisma.taskPerson.deleteMany();
   await prisma.task.deleteMany();
   await prisma.project.deleteMany();
   await prisma.taskType.deleteMany();
   await prisma.taskStatus.deleteMany();
+  await prisma.person.deleteMany();
 
   // Create task types
   const types = [
@@ -39,6 +41,21 @@ async function main() {
     await prisma.taskStatus.create({ data: status });
   }
   console.log('✅ Created task statuses');
+
+  // Create people (POC - Point of Contact)
+  const people = [
+    { name: 'Efa', color: null, order: 0 },
+    { name: 'Shirley', color: null, order: 1 },
+    { name: 'Joelle', color: null, order: 2 },
+    { name: 'Ying Wen', color: null, order: 3 },
+  ];
+
+  const createdPeople = [];
+  for (const person of people) {
+    const created = await prisma.person.create({ data: person });
+    createdPeople.push(created);
+  }
+  console.log('✅ Created people (POC)');
 
   // Create sample projects
   const project1 = await prisma.project.create({

@@ -103,14 +103,28 @@ app.delete('/api/projects/:id', async (req, res) => {
 
 // ----- TASKS -----
 
+// Helper function to format task with persons
+const formatTaskWithPersons = (task) => {
+  return {
+    ...task,
+    personIds: task.persons ? task.persons.map(tp => tp.personId) : [],
+    personNames: task.persons ? task.persons.map(tp => tp.person?.name).filter(Boolean) : []
+  };
+};
+
 // Get all tasks
 app.get('/api/tasks', async (req, res) => {
   try {
     const tasks = await prisma.task.findMany({
-      include: { project: true },
+      include: { 
+        project: true,
+        persons: {
+          include: { person: true }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(tasks);
+    res.json(tasks.map(formatTaskWithPersons));
   } catch (error) {
     console.error('Error fetching tasks:', error);
     res.status(500).json({ error: 'Failed to fetch tasks' });
@@ -122,19 +136,58 @@ app.get('/api/projects/:projectId/tasks', async (req, res) => {
   try {
     const tasks = await prisma.task.findMany({
       where: { projectId: parseInt(req.params.projectId) },
+      include: {
+        persons: {
+          include: { person: true }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(tasks);
+    res.json(tasks.map(formatTaskWithPersons));
   } catch (error) {
     console.error('Error fetching tasks:', error);
     res.status(500).json({ error: 'Failed to fetch tasks' });
   }
 });
 
+// Get tasks grouped by person (for Person View)
+app.get('/api/tasks/by-person', async (req, res) => {
+  try {
+    const persons = await prisma.person.findMany({
+      orderBy: { order: 'asc' },
+      include: {
+        tasks: {
+          include: {
+            task: {
+              include: {
+                project: true,
+                persons: {
+                  include: { person: true }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // Format the response
+    const result = persons.map(person => ({
+      ...person,
+      tasks: person.tasks.map(tp => formatTaskWithPersons(tp.task))
+    }));
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching tasks by person:', error);
+    res.status(500).json({ error: 'Failed to fetch tasks by person' });
+  }
+});
+
 // Create task
 app.post('/api/tasks', async (req, res) => {
   try {
-    const { name, projectId, type, status, dueDate, notes } = req.body;
+    const { name, projectId, type, status, dueDate, notes, personIds } = req.body;
     const task = await prisma.task.create({
       data: {
         name,
@@ -142,10 +195,21 @@ app.post('/api/tasks', async (req, res) => {
         type: type || 'Regular',
         status: status || 'My action',
         dueDate: dueDate || '',
-        notes: notes || ''
+        notes: notes || '',
+        // Create person relationships if provided
+        persons: personIds && personIds.length > 0 ? {
+          create: personIds.map(personId => ({
+            personId: parseInt(personId)
+          }))
+        } : undefined
+      },
+      include: {
+        persons: {
+          include: { person: true }
+        }
       }
     });
-    res.status(201).json(task);
+    res.status(201).json(formatTaskWithPersons(task));
   } catch (error) {
     console.error('Error creating task:', error);
     res.status(500).json({ error: 'Failed to create task' });
@@ -155,7 +219,8 @@ app.post('/api/tasks', async (req, res) => {
 // Update task
 app.put('/api/tasks/:id', async (req, res) => {
   try {
-    const { name, projectId, type, status, dueDate, notes } = req.body;
+    const { name, projectId, type, status, dueDate, notes, personIds } = req.body;
+    const taskId = parseInt(req.params.id);
     const updateData = {};
     
     if (name !== undefined) updateData.name = name;
@@ -165,11 +230,41 @@ app.put('/api/tasks/:id', async (req, res) => {
     if (dueDate !== undefined) updateData.dueDate = dueDate;
     if (notes !== undefined) updateData.notes = notes;
     
+    // Update task basic fields
     const task = await prisma.task.update({
-      where: { id: parseInt(req.params.id) },
+      where: { id: taskId },
       data: updateData
     });
-    res.json(task);
+    
+    // Update person relationships if provided
+    if (personIds !== undefined) {
+      // Delete existing relationships
+      await prisma.taskPerson.deleteMany({
+        where: { taskId }
+      });
+      
+      // Create new relationships
+      if (personIds.length > 0) {
+        await prisma.taskPerson.createMany({
+          data: personIds.map(personId => ({
+            taskId,
+            personId: parseInt(personId)
+          }))
+        });
+      }
+    }
+    
+    // Fetch updated task with persons
+    const updatedTask = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        persons: {
+          include: { person: true }
+        }
+      }
+    });
+    
+    res.json(formatTaskWithPersons(updatedTask));
   } catch (error) {
     console.error('Error updating task:', error);
     res.status(500).json({ error: 'Failed to update task' });
@@ -179,6 +274,7 @@ app.put('/api/tasks/:id', async (req, res) => {
 // Delete task
 app.delete('/api/tasks/:id', async (req, res) => {
   try {
+    // TaskPerson entries will be deleted automatically due to onDelete: Cascade
     await prisma.task.delete({
       where: { id: parseInt(req.params.id) }
     });
@@ -189,14 +285,84 @@ app.delete('/api/tasks/:id', async (req, res) => {
   }
 });
 
-// ----- SETTINGS (Types & Statuses) -----
+// ----- PERSONS (POC - Point of Contact) -----
+
+// Get all persons
+app.get('/api/persons', async (req, res) => {
+  try {
+    const persons = await prisma.person.findMany({
+      orderBy: { order: 'asc' }
+    });
+    res.json(persons);
+  } catch (error) {
+    console.error('Error fetching persons:', error);
+    res.status(500).json({ error: 'Failed to fetch persons' });
+  }
+});
+
+// Create person
+app.post('/api/persons', async (req, res) => {
+  try {
+    const { name, color } = req.body;
+    const maxOrder = await prisma.person.aggregate({ _max: { order: true } });
+    const person = await prisma.person.create({
+      data: {
+        name,
+        color: color || null,
+        order: (maxOrder._max.order || 0) + 1
+      }
+    });
+    res.status(201).json(person);
+  } catch (error) {
+    console.error('Error creating person:', error);
+    res.status(500).json({ error: 'Failed to create person' });
+  }
+});
+
+// Update person
+app.put('/api/persons/:id', async (req, res) => {
+  try {
+    const { name, color, order } = req.body;
+    const updateData = {};
+    
+    if (name !== undefined) updateData.name = name;
+    if (color !== undefined) updateData.color = color;
+    if (order !== undefined) updateData.order = order;
+    
+    const person = await prisma.person.update({
+      where: { id: parseInt(req.params.id) },
+      data: updateData
+    });
+    res.json(person);
+  } catch (error) {
+    console.error('Error updating person:', error);
+    res.status(500).json({ error: 'Failed to update person' });
+  }
+});
+
+// Delete person
+app.delete('/api/persons/:id', async (req, res) => {
+  try {
+    // TaskPerson entries will be deleted automatically due to onDelete: Cascade
+    await prisma.person.delete({
+      where: { id: parseInt(req.params.id) }
+    });
+    res.json({ message: 'Person deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting person:', error);
+    res.status(500).json({ error: 'Failed to delete person' });
+  }
+});
+
+// ----- SETTINGS (Types, Statuses & Persons) -----
 
 // Get all settings
 app.get('/api/settings', async (req, res) => {
   try {
     const types = await prisma.taskType.findMany({ orderBy: { order: 'asc' } });
     const statuses = await prisma.taskStatus.findMany({ orderBy: { order: 'asc' } });
-    res.json({ types, statuses });
+    const persons = await prisma.person.findMany({ orderBy: { order: 'asc' } });
+    res.json({ types, statuses, persons });
   } catch (error) {
     console.error('Error fetching settings:', error);
     res.status(500).json({ error: 'Failed to fetch settings' });
@@ -246,6 +412,50 @@ app.put('/api/settings/statuses', async (req, res) => {
   } catch (error) {
     console.error('Error updating statuses:', error);
     res.status(500).json({ error: 'Failed to update statuses' });
+  }
+});
+
+// Update persons
+app.put('/api/settings/persons', async (req, res) => {
+  try {
+    const { persons } = req.body;
+    
+    // Get existing person IDs to preserve task relationships
+    const existingPersons = await prisma.person.findMany();
+    const existingIds = new Set(existingPersons.map(p => p.id));
+    
+    // Delete persons that are not in the new list
+    const newIds = new Set(persons.filter(p => p.id).map(p => p.id));
+    const idsToDelete = [...existingIds].filter(id => !newIds.has(id));
+    
+    if (idsToDelete.length > 0) {
+      await prisma.person.deleteMany({
+        where: { id: { in: idsToDelete } }
+      });
+    }
+    
+    // Update or create persons
+    const createdPersons = await Promise.all(
+      persons.map(async (person, index) => {
+        if (person.id && existingIds.has(person.id)) {
+          // Update existing
+          return prisma.person.update({
+            where: { id: person.id },
+            data: { name: person.name, color: person.color || null, order: index }
+          });
+        } else {
+          // Create new
+          return prisma.person.create({
+            data: { name: person.name, color: person.color || null, order: index }
+          });
+        }
+      })
+    );
+    
+    res.json(createdPersons);
+  } catch (error) {
+    console.error('Error updating persons:', error);
+    res.status(500).json({ error: 'Failed to update persons' });
   }
 });
 

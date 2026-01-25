@@ -31,6 +31,33 @@ model Task {
   
   project   Project  @relation(fields: [projectId], references: [id])
   projectId Int
+  
+  // Many-to-many relationship with Person (POC)
+  persons   TaskPerson[]
+}
+
+model Person {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  color     String?  // Optional color, default is colorless
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Many-to-many relationship with Task
+  tasks     TaskPerson[]
+}
+
+// Join table for Task-Person many-to-many relationship
+model TaskPerson {
+  id        Int      @id @default(autoincrement())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId    Int
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  personId  Int
+  createdAt DateTime @default(now())
+  
+  @@unique([taskId, personId])
 }
 
 model TaskType {
