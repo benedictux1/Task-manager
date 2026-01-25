@@ -1,153 +1,266 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2 } from 'lucide-react';
 import { getWorkingDaysUntilDue, formatDateToDDMMM, parseDueDate, addWorkingDays } from './utils/dateUtils';
+import { projectsAPI, tasksAPI, settingsAPI } from './api';
 
 // Main App Component
 export default function TaskManagerApp() {
   const [currentView, setCurrentView] = useState('task');
-  const [selectedProjectId, setSelectedProjectId] = useState(1);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  
+  // Loading and error states
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const [types, setTypes] = useState([
-    'Admin', 'Urgent', 'Regular', 'Night', 'Weekend', 'Backlog', 'Others'
-  ]);
-
-  const [statuses, setStatuses] = useState([
-    { name: 'Must do', color: '#FF6B6B' },
-    { name: 'Waiting others', color: '#1D1D1F' },
-    { name: 'My action', color: '#FFD93D' },
-    { name: 'Done', color: '#6BCF7F' }
-  ]);
-
-  const typeColors = {
-    'Admin': '#6C757D',      // Gray
-    'Urgent': '#DC3545',     // Red  
-    'Regular': '#0066CC',    // Blue
-    'Night': '#343A40',      // Dark Gray
-    'Weekend': '#28A745',    // Green
-    'Backlog': '#FFC107',    // Yellow
-    'Others': '#6F42C1'      // Purple
+  // Default type colors (used if API doesn't provide colors)
+  const defaultTypeColors = {
+    'Admin': '#6C757D',
+    'Urgent': '#DC3545',
+    'Regular': '#0066CC',
+    'Night': '#343A40',
+    'Weekend': '#28A745',
+    'Backlog': '#FFC107',
+    'Others': '#6F42C1'
   };
+
+  const [types, setTypes] = useState([]);
+  const [typeColors, setTypeColors] = useState(defaultTypeColors);
+
+  const [statuses, setStatuses] = useState([]);
 
   const getTypeColor = (typeName) => {
     return typeColors[typeName] || '#0066CC';
   };
 
-  const [projects, setProjects] = useState([
-    {
-      id: 1,
-      name: 'Website Redesign',
-      notes: '<p>Modernize company website with new branding.</p><h3>Key objectives:</h3><ul><li>Improve mobile responsiveness</li><li>Update color scheme to match new brand guidelines</li><li>Optimize page load speed</li></ul><p><strong>Stakeholders:</strong> Marketing team, Design team, Dev team</p><p><mark>Deadline: End of Q1</mark></p>'
-    },
-    {
-      id: 2,
-      name: 'Q1 Planning',
-      notes: '<p>Strategic planning for Q1 2026.</p><h3>Focus areas:</h3><ol><li>Revenue targets</li><li>Team expansion</li><li>Product roadmap priorities</li></ol><p><strong>Meeting notes from 1/15:</strong> Board approved budget increase for hiring.</p>'
-    },
-    {
-      id: 3,
-      name: 'Client Onboarding System',
-      notes: '<p>Build automated onboarding flow for new clients.</p><h3>Requirements:</h3><ul><li>Welcome email sequence</li><li>Documentation portal</li><li>Kickoff meeting scheduler</li><li>Contract signing workflow</li></ul>'
-    }
-  ]);
-
-  const [tasks, setTasks] = useState([
-    { id: 1, name: 'Review design mockups', projectId: 1, type: 'Urgent', status: 'Must do', dueDate: '25/Jan', notes: '' },
-    { id: 2, name: 'Update homepage copy', projectId: 1, type: 'Regular', status: 'My action', dueDate: '28/Jan', notes: '' },
-    { id: 3, name: 'Get feedback from CEO', projectId: 1, type: 'Regular', status: 'Waiting others', dueDate: '', notes: '' },
-    { id: 4, name: 'Finalize Q1 OKRs', projectId: 2, type: 'Urgent', status: 'Must do', dueDate: '24/Jan', notes: '' },
-    { id: 5, name: 'Schedule team kickoff', projectId: 2, type: 'Admin', status: 'My action', dueDate: '27/Jan', notes: '' },
-    { id: 6, name: 'Review budget proposals', projectId: 2, type: 'Regular', status: 'Done', dueDate: '20/Jan', notes: '' },
-    { id: 7, name: 'Draft welcome email template', projectId: 3, type: 'Regular', status: 'My action', dueDate: '', notes: '' },
-    { id: 8, name: 'Build documentation site', projectId: 3, type: 'Backlog', status: 'Waiting others', dueDate: '', notes: '' },
-  ]);
+  const [projects, setProjects] = useState([]);
+  const [tasks, setTasks] = useState([]);
 
   const [newTaskInput, setNewTaskInput] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
+
+  // ==================== DATA FETCHING ====================
+  
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Fetch all data in parallel
+      const [projectsData, tasksData, settingsData] = await Promise.all([
+        projectsAPI.getAll(),
+        tasksAPI.getAll(),
+        settingsAPI.getAll()
+      ]);
+      
+      setProjects(projectsData);
+      setTasks(tasksData);
+      
+      // Set types and create color map
+      if (settingsData.types && settingsData.types.length > 0) {
+        setTypes(settingsData.types.map(t => t.name));
+        const colorMap = {};
+        settingsData.types.forEach(t => {
+          colorMap[t.name] = t.color;
+        });
+        setTypeColors(colorMap);
+      } else {
+        // Fallback to defaults
+        setTypes(['Admin', 'Urgent', 'Regular', 'Night', 'Weekend', 'Backlog', 'Others']);
+      }
+      
+      // Set statuses
+      if (settingsData.statuses && settingsData.statuses.length > 0) {
+        setStatuses(settingsData.statuses);
+      } else {
+        // Fallback to defaults
+        setStatuses([
+          { name: 'Must do', color: '#FF6B6B' },
+          { name: 'Waiting others', color: '#1D1D1F' },
+          { name: 'My action', color: '#FFD93D' },
+          { name: 'Done', color: '#6BCF7F' }
+        ]);
+      }
+      
+      // Set selected project to first one if not set
+      if (projectsData.length > 0 && !selectedProjectId) {
+        setSelectedProjectId(projectsData[0].id);
+      }
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError(err.message);
+      
+      // Fallback to default data if API fails
+      setTypes(['Admin', 'Urgent', 'Regular', 'Night', 'Weekend', 'Backlog', 'Others']);
+      setStatuses([
+        { name: 'Must do', color: '#FF6B6B' },
+        { name: 'Waiting others', color: '#1D1D1F' },
+        { name: 'My action', color: '#FFD93D' },
+        { name: 'Done', color: '#6BCF7F' }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedProjectId]);
+
+  // Fetch data on mount
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const getStatusColor = (statusName) => {
     const status = statuses.find(s => s.name === statusName);
     return status ? status.color : '#1D1D1F';
   };
 
-  const addProject = () => {
-    const newId = Math.max(...projects.map(p => p.id), 0) + 1;
-    const newProject = {
-      id: newId,
-      name: 'New Project',
-      notes: ''
-    };
-    setProjects([...projects, newProject]);
-    setSelectedProjectId(newId);
-  };
+  // ==================== PROJECT OPERATIONS ====================
 
-  const updateProject = (id, field, value) => {
-    setProjects(projects.map(p =>
-      p.id === id ? { ...p, [field]: value } : p
-    ));
-  };
-
-  const deleteProject = (id) => {
-    if (projects.length === 1) return;
-    setProjects(projects.filter(p => p.id !== id));
-    setTasks(tasks.filter(t => t.projectId !== id));
-    if (selectedProjectId === id) {
-      setSelectedProjectId(projects.find(p => p.id !== id).id);
+  const addProject = async () => {
+    try {
+      const newProject = await projectsAPI.create({ name: 'New Project', notes: '' });
+      setProjects([newProject, ...projects]);
+      setSelectedProjectId(newProject.id);
+    } catch (err) {
+      console.error('Error creating project:', err);
+      setError(err.message);
     }
   };
 
+  const updateProject = async (id, field, value) => {
+    // Optimistic update
+    setProjects(projects.map(p =>
+      p.id === id ? { ...p, [field]: value } : p
+    ));
+    
+    try {
+      await projectsAPI.update(id, { [field]: value });
+    } catch (err) {
+      console.error('Error updating project:', err);
+      // Revert on error
+      fetchData();
+    }
+  };
+
+  const deleteProject = async (id) => {
+    if (projects.length === 1) return;
+    
+    // Optimistic update
+    const originalProjects = [...projects];
+    const originalTasks = [...tasks];
+    
+    setProjects(projects.filter(p => p.id !== id));
+    setTasks(tasks.filter(t => t.projectId !== id));
+    
+    if (selectedProjectId === id) {
+      const remainingProjects = projects.filter(p => p.id !== id);
+      if (remainingProjects.length > 0) {
+        setSelectedProjectId(remainingProjects[0].id);
+      }
+    }
+    
+    try {
+      await projectsAPI.delete(id);
+    } catch (err) {
+      console.error('Error deleting project:', err);
+      // Revert on error
+      setProjects(originalProjects);
+      setTasks(originalTasks);
+    }
+  };
+
+  // ==================== TASK OPERATIONS ====================
+
   // Simple add task for project view (with due date)
-  const addTask = (projectId) => {
+  const addTask = async (projectId) => {
     if (!newTaskInput.trim()) return;
-    const newId = Math.max(...tasks.map(t => t.id), 0) + 1;
-    const newTask = {
-      id: newId,
-      name: newTaskInput,
-      projectId: projectId,
-      type: 'Regular',
-      status: 'My action',
-      dueDate: newTaskDueDate,
-      notes: ''
-    };
-    setTasks([...tasks, newTask]);
-    setNewTaskInput('');
-    setNewTaskDueDate('');
+    
+    try {
+      const newTask = await tasksAPI.create({
+        name: newTaskInput,
+        projectId: projectId,
+        type: 'Regular',
+        status: 'My action',
+        dueDate: newTaskDueDate,
+        notes: ''
+      });
+      setTasks([newTask, ...tasks]);
+      setNewTaskInput('');
+      setNewTaskDueDate('');
+    } catch (err) {
+      console.error('Error creating task:', err);
+      setError(err.message);
+    }
   };
 
   // Advanced add task (from task view modal)
-  const addTaskAdvanced = (taskData) => {
-    const newId = Math.max(...tasks.map(t => t.id), 0) + 1;
-    const newTask = {
-      id: newId,
-      ...taskData,
-      notes: ''
-    };
-    setTasks([...tasks, newTask]);
+  const addTaskAdvanced = async (taskData) => {
+    try {
+      const newTask = await tasksAPI.create({
+        ...taskData,
+        notes: ''
+      });
+      setTasks([newTask, ...tasks]);
+    } catch (err) {
+      console.error('Error creating task:', err);
+      setError(err.message);
+    }
   };
 
-  const updateTask = (id, field, value) => {
+  const updateTask = async (id, field, value) => {
+    // Optimistic update
     setTasks(tasks.map(t =>
       t.id === id ? { ...t, [field]: value } : t
     ));
+    
+    try {
+      await tasksAPI.update(id, { [field]: value });
+    } catch (err) {
+      console.error('Error updating task:', err);
+      // Revert on error
+      fetchData();
+    }
   };
 
-  const toggleTaskDone = (id) => {
+  const toggleTaskDone = async (id) => {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
 
     const doneStatus = statuses.find(s => s.name === 'Done');
     const defaultStatus = statuses.find(s => s.name !== 'Done');
 
-    if (task.status === 'Done') {
-      updateTask(id, 'status', defaultStatus?.name || 'My action');
-    } else {
-      updateTask(id, 'status', doneStatus?.name || 'Done');
+    const newStatus = task.status === 'Done' 
+      ? (defaultStatus?.name || 'My action')
+      : (doneStatus?.name || 'Done');
+    
+    await updateTask(id, 'status', newStatus);
+  };
+
+  const deleteTask = async (id) => {
+    // Optimistic update
+    const originalTasks = [...tasks];
+    setTasks(tasks.filter(t => t.id !== id));
+    
+    try {
+      await tasksAPI.delete(id);
+    } catch (err) {
+      console.error('Error deleting task:', err);
+      // Revert on error
+      setTasks(originalTasks);
     }
   };
 
-  const deleteTask = (id) => {
-    setTasks(tasks.filter(t => t.id !== id));
-  };
+  // ==================== LOADING STATE ====================
+  
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-[#F5F5F7] flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-[#0066CC] animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading Task Manager...</p>
+        </div>
+      </div>
+    );
+  }
 
   const goToProject = (projectId) => {
     if (projectId) {

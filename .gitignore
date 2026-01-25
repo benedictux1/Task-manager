@@ -112,3 +112,8 @@ agent-transcripts/
 mcps/
 assets/
 .cursor/
+
+# Server specific
+server/node_modules/
+server/.env
+server/prisma/migrations/
