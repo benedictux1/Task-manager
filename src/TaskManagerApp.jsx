@@ -454,10 +454,23 @@ function ProjectView({
   const projectTasks = tasks.filter(t => t.projectId === selectedProjectId);
 
   const sortedTasks = useMemo(() => {
+    // Type priority: Urgent > Regular > Admin > Weekend > Backlog
+    const typeOrder = { 'Urgent': 1, 'Regular': 2, 'Admin': 3, 'Weekend': 4, 'Backlog': 5 };
+    // Status priority: Must do > My action > Waiting others > Done (at bottom)
+    const statusOrder = { 'Must do': 1, 'My action': 2, 'Waiting others': 3, 'Done': 99 };
+    
     return [...projectTasks].sort((a, b) => {
+      // Done tasks always at bottom
       if (a.status === 'Done' && b.status !== 'Done') return 1;
       if (a.status !== 'Done' && b.status === 'Done') return -1;
-      return 0;
+      
+      // Sort by type first
+      const typeCompare = (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99);
+      if (typeCompare !== 0) return typeCompare;
+      
+      // Then sort by status within same type
+      const statusCompare = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+      return statusCompare;
     });
   }, [projectTasks]);
 
@@ -1859,15 +1872,21 @@ function TaskView({
       return true;
     });
 
+    // Type priority: Urgent > Regular > Admin > Weekend > Backlog
+    const typeOrder = { 'Urgent': 1, 'Regular': 2, 'Admin': 3, 'Weekend': 4, 'Backlog': 5 };
+    // Status priority: Must do > My action > Waiting others > Done (at bottom)
+    const statusOrder = { 'Must do': 1, 'My action': 2, 'Waiting others': 3, 'Done': 99 };
+    
     filtered.sort((a, b) => {
+      // Done tasks always at bottom
       if (a.status === 'Done' && b.status !== 'Done') return 1;
       if (a.status !== 'Done' && b.status === 'Done') return -1;
 
-      const typeOrder = { 'Urgent': 1, 'Admin': 2, 'Regular': 3, 'Night': 4, 'Weekend': 5, 'Backlog': 6, 'Others': 7 };
+      // Sort by type first
       const typeCompare = (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99);
       if (typeCompare !== 0) return typeCompare;
 
-      const statusOrder = { 'Must do': 1, 'My action': 2, 'Waiting others': 3, 'Done': 4 };
+      // Then sort by status within same type
       const statusCompare = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
       if (statusCompare !== 0) return statusCompare;
 
@@ -2892,9 +2911,26 @@ function PersonView({
 
   // Get tasks for a person
   const getTasksForPerson = (personId) => {
-    return tasks.filter(task => 
-      task.personIds && task.personIds.includes(personId)
-    );
+    // Type priority: Urgent > Regular > Admin > Weekend > Backlog
+    const typeOrder = { 'Urgent': 1, 'Regular': 2, 'Admin': 3, 'Weekend': 4, 'Backlog': 5 };
+    // Status priority: Must do > My action > Waiting others > Done (at bottom)
+    const statusOrder = { 'Must do': 1, 'My action': 2, 'Waiting others': 3, 'Done': 99 };
+    
+    return tasks
+      .filter(task => task.personIds && task.personIds.includes(personId))
+      .sort((a, b) => {
+        // Done tasks always at bottom
+        if (a.status === 'Done' && b.status !== 'Done') return 1;
+        if (a.status !== 'Done' && b.status === 'Done') return -1;
+        
+        // Sort by type first
+        const typeCompare = (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99);
+        if (typeCompare !== 0) return typeCompare;
+        
+        // Then sort by status within same type
+        const statusCompare = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+        return statusCompare;
+      });
   };
 
   // Get project name
