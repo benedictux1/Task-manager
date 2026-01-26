@@ -1689,7 +1689,19 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const statusSelectRef = useRef(null);
   const projectSelectRef = useRef(null);
 
-  const projectOptions = [{ id: null, name: 'No Project' }, ...projects];
+  // Calculate default project ID (General Tasks or first project)
+  const generalTasksProject = projects.find(p => p.name === 'General Tasks');
+  const defaultProjectId = generalTasksProject?.id || (projects.length > 0 ? projects[0].id : null);
+
+  // Update selectedProject when projects load
+  useEffect(() => {
+    if (defaultProjectId && !selectedProject) {
+      setSelectedProject(defaultProjectId);
+      setProjectIndex(projects.findIndex(p => p.id === defaultProjectId));
+    }
+  }, [defaultProjectId, projects]);
+
+  const projectOptions = [...projects]; // Always require a project
 
   const handleTaskKeyDown = (e) => {
     if (e.key === 'Enter' && taskName.trim()) {
@@ -1754,18 +1766,29 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const createTask = () => {
     if (!taskName.trim()) return;
 
+    // Use selectedProject, or fall back to defaultProjectId
+    const projectId = selectedProject || defaultProjectId;
+    
+    // Don't create task without a valid project
+    if (!projectId) {
+      console.error('Cannot create task: no project available');
+      alert('Please wait for projects to load, or select a project.');
+      return;
+    }
+
     const oneWeekLater = addWorkingDays(new Date(), 7);
     const dueDate = formatDateToDDMMM(oneWeekLater);
 
     const newTask = {
       name: taskName.trim(),
-      projectId: selectedProject,
+      projectId: projectId,
       type: selectedType,
       status: selectedStatus,
       dueDate: dueDate,
       personIds: defaultPersonId ? [defaultPersonId] : []
     };
 
+    console.log('PersonTaskCreator creating task:', newTask); // Debug log
     onAdd(newTask);
     resetForm();
   };
@@ -1775,10 +1798,12 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setTaskName('');
     setSelectedType('Regular');
     setSelectedStatus('My action');
-    setSelectedProject(null);
+    // Reset to default project
+    const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
+    setSelectedProject(resetProjectId);
     setTypeIndex(types.indexOf('Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
-    setProjectIndex(-1);
+    setProjectIndex(resetProjectId ? projects.findIndex(p => p.id === resetProjectId) : -1);
   };
 
   const handleTypeSelect = (type) => {
