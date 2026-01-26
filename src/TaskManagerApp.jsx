@@ -216,14 +216,17 @@ export default function TaskManagerApp() {
 
   // Advanced add task (from task view modal)
   const addTaskAdvanced = async (taskData) => {
+    console.log('addTaskAdvanced called with:', taskData); // Debug log
     try {
       const newTask = await tasksAPI.create({
         ...taskData,
-        notes: ''
+        notes: taskData.notes || ''
       });
+      console.log('Task created successfully:', newTask); // Debug log
       setTasks([newTask, ...tasks]);
     } catch (err) {
       console.error('Error creating task:', err);
+      alert('Failed to create task: ' + err.message);
       setError(err.message);
     }
   };
@@ -1081,26 +1084,34 @@ function SizeDropdownSelect({ options, onSelect, editorRef }) {
 
 // Inline Task Creator Component
 function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor, getTypeColor, onAdd }) {
-  // Find "General Tasks" project as default
-  const generalTasksProject = projects.find(p => p.name === 'General Tasks');
-  const defaultProjectId = generalTasksProject?.id || (projects.length > 0 ? projects[0].id : null);
-  
   const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'poc', 'project'
   const [taskName, setTaskName] = useState('');
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
   const [selectedPOC, setSelectedPOC] = useState([]); // Array of person IDs
-  const [selectedProject, setSelectedProject] = useState(defaultProjectId);
+  const [selectedProject, setSelectedProject] = useState(null);
   const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
   const [pocIndex, setPocIndex] = useState(-1); // -1 means "unassigned"
-  const [projectIndex, setProjectIndex] = useState(projects.findIndex(p => p.id === defaultProjectId));
+  const [projectIndex, setProjectIndex] = useState(-1);
 
   const taskInputRef = useRef(null);
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
   const pocSelectRef = useRef(null);
   const projectSelectRef = useRef(null);
+
+  // Calculate default project ID
+  const generalTasksProject = projects.find(p => p.name === 'General Tasks');
+  const defaultProjectId = generalTasksProject?.id || (projects.length > 0 ? projects[0].id : null);
+
+  // Update selectedProject when projects load (fixes initialization issue)
+  useEffect(() => {
+    if (defaultProjectId && !selectedProject) {
+      setSelectedProject(defaultProjectId);
+      setProjectIndex(projects.findIndex(p => p.id === defaultProjectId));
+    }
+  }, [defaultProjectId, projects]);
 
   const projectOptions = [...projects]; // No "No Project" option - always assign to a project
   const pocOptions = [{ id: null, name: '- (Unassigned)' }, ...(persons || [])];
@@ -1188,12 +1199,19 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const createTask = () => {
     if (!taskName.trim()) return;
 
+    // Use selectedProject, or fall back to defaultProjectId
+    const projectId = selectedProject || defaultProjectId;
+    
+    // Don't create task without a valid project
+    if (!projectId) {
+      console.error('Cannot create task: no project available');
+      alert('Please wait for projects to load, or select a project.');
+      return;
+    }
+
     // Set due date to 1 week from today
     const oneWeekLater = addWorkingDays(new Date(), 7);
     const dueDate = formatDateToDDMMM(oneWeekLater);
-
-    // Use selectedProject, or fall back to defaultProjectId
-    const projectId = selectedProject || defaultProjectId;
 
     const newTask = {
       name: taskName.trim(),
@@ -1204,6 +1222,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
       personIds: selectedPOC.filter(id => id !== null)
     };
 
+    console.log('Creating task:', newTask); // Debug log
     onAdd(newTask);
     resetForm();
   };
@@ -1214,11 +1233,13 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setSelectedType('Regular');
     setSelectedStatus('My action');
     setSelectedPOC([]);
-    setSelectedProject(defaultProjectId);
+    // Reset to default project (General Tasks or first project)
+    const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
+    setSelectedProject(resetProjectId);
     setTypeIndex(types.indexOf('Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
     setPocIndex(-1);
-    setProjectIndex(projects.findIndex(p => p.id === defaultProjectId));
+    setProjectIndex(resetProjectId ? projects.findIndex(p => p.id === resetProjectId) : -1);
     setTimeout(() => taskInputRef.current?.focus(), 50);
   };
 
