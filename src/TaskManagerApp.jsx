@@ -3198,25 +3198,54 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPer
   };
 
   // Person functions
-  const addPerson = () => {
+  const addPerson = async () => {
     if (newPerson.name.trim() && !persons.find(p => p.name === newPerson.name.trim())) {
-      setPersons([...persons, { 
-        name: newPerson.name.trim(), 
-        color: newPerson.color || null,
-        order: persons.length 
-      }]);
-      setNewPerson({ name: '', color: '' });
+      try {
+        const createdPerson = await personsAPI.create({ 
+          name: newPerson.name.trim(), 
+          color: newPerson.color || null,
+          order: persons.length 
+        });
+        setPersons([...persons, createdPerson]);
+        setNewPerson({ name: '', color: '' });
+      } catch (err) {
+        console.error('Error creating person:', err);
+        alert('Failed to create person: ' + err.message);
+      }
     }
   };
 
-  const removePerson = (personName) => {
-    setPersons(persons.filter(p => p.name !== personName));
+  const removePerson = async (personName) => {
+    const person = persons.find(p => p.name === personName);
+    if (!person) return;
+    
+    try {
+      await personsAPI.delete(person.id);
+      setPersons(persons.filter(p => p.name !== personName));
+    } catch (err) {
+      console.error('Error deleting person:', err);
+      alert('Failed to delete person: ' + err.message);
+    }
   };
 
-  const updatePersonColor = (personName, color) => {
-    setPersons(persons.map(p =>
-      p.name === personName ? { ...p, color: color || null } : p
+  const updatePersonColor = async (personName, color) => {
+    const person = persons.find(p => p.name === personName);
+    if (!person) return;
+    
+    // Optimistic update
+    setPersons(persons.map(p => 
+      p.name === personName ? { ...p, color } : p
     ));
+    
+    try {
+      await personsAPI.update(person.id, { color });
+    } catch (err) {
+      console.error('Error updating person color:', err);
+      // Revert on error
+      setPersons(persons.map(p => 
+        p.name === personName ? { ...p, color: person.color } : p
+      ));
+    }
   };
 
   return (
