@@ -1124,7 +1124,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleTypeKeyDown = (e) => {
+    // Mark as keyboard navigation to prevent Edge from double-firing onChange
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, typeIndex - 1);
       setTypeIndex(newIndex);
@@ -1142,7 +1146,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleStatusKeyDown = (e) => {
+    // Mark as keyboard navigation to prevent Edge from double-firing onChange
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, statusIndex - 1);
       setStatusIndex(newIndex);
@@ -1160,7 +1168,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handlePOCKeyDown = (e) => {
+    // Mark as keyboard navigation to prevent Edge from double-firing onChange
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(-1, pocIndex - 1);
       setPocIndex(newIndex);
@@ -1180,7 +1192,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleProjectKeyDown = (e) => {
+    // Mark as keyboard navigation to prevent Edge from double-firing onChange
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, projectIndex - 1);
       setProjectIndex(newIndex);
@@ -1243,7 +1259,15 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setTimeout(() => taskInputRef.current?.focus(), 50);
   };
 
+  // Track if we're handling a keyboard event (to prevent Edge from double-firing)
+  const isKeyboardNavRef = useRef(false);
+
   const handleTypeSelect = (type) => {
+    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedType(type);
     setTypeIndex(types.indexOf(type));
     setStep('status');
@@ -1251,6 +1275,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleStatusSelect = (statusName) => {
+    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedStatus(statusName);
     setStatusIndex(statuses.findIndex(s => s.name === statusName));
     setStep('poc');
@@ -1258,6 +1287,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handlePOCSelect = (personId) => {
+    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     if (personId === null || personId === '') {
       setSelectedPOC([]);
       setPocIndex(-1);
@@ -1270,6 +1304,11 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleProjectSelect = (projectId) => {
+    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedProject(projectId);
     setProjectIndex(projectOptions.findIndex(p => p.id === projectId));
     createTask();
@@ -1436,6 +1475,9 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
   const pocSelectRef = useRef(null);
+  
+  // Track if we're handling a keyboard event (to prevent Edge from double-firing onChange)
+  const isKeyboardNavRef = useRef(false);
 
   const handleTaskKeyDown = (e) => {
     if (e.key === 'Enter' && taskName.trim()) {
@@ -1445,7 +1487,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   };
 
   const handleTypeKeyDown = (e) => {
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, typeIndex - 1);
       setTypeIndex(newIndex);
@@ -1463,7 +1508,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   };
 
   const handleStatusKeyDown = (e) => {
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, statusIndex - 1);
       setStatusIndex(newIndex);
@@ -1481,7 +1529,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   };
 
   const handlePOCKeyDown = (e) => {
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(-1, pocIndex - 1);
       setPocIndex(newIndex);
@@ -1530,6 +1581,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   };
 
   const handleTypeSelect = (type) => {
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedType(type);
     setTypeIndex(types.indexOf(type));
     setStep('status');
@@ -1537,6 +1592,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   };
 
   const handleStatusSelect = (statusName) => {
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedStatus(statusName);
     setStatusIndex(statuses.findIndex(s => s.name === statusName));
     setStep('poc');
@@ -1544,6 +1603,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   };
 
   const handlePOCSelect = (personId) => {
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     if (personId === null || personId === '') {
       setSelectedPOC([]);
       setPocIndex(-1);
@@ -1688,6 +1751,9 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
   const projectSelectRef = useRef(null);
+  
+  // Track if we're handling a keyboard event (to prevent Edge from double-firing onChange)
+  const isKeyboardNavRef = useRef(false);
 
   // Calculate default project ID (General Tasks or first project)
   const generalTasksProject = projects.find(p => p.name === 'General Tasks');
@@ -1711,7 +1777,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleTypeKeyDown = (e) => {
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, typeIndex - 1);
       setTypeIndex(newIndex);
@@ -1729,7 +1798,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleStatusKeyDown = (e) => {
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, statusIndex - 1);
       setStatusIndex(newIndex);
@@ -1747,7 +1819,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleProjectKeyDown = (e) => {
+    isKeyboardNavRef.current = true;
     e.preventDefault();
+    e.stopPropagation();
+    
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, projectIndex - 1);
       setProjectIndex(newIndex);
@@ -1807,6 +1882,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleTypeSelect = (type) => {
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedType(type);
     setTypeIndex(types.indexOf(type));
     setStep('status');
@@ -1814,6 +1893,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleStatusSelect = (statusName) => {
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedStatus(statusName);
     setStatusIndex(statuses.findIndex(s => s.name === statusName));
     setStep('project');
@@ -1821,6 +1904,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   };
 
   const handleProjectSelect = (projectId) => {
+    if (isKeyboardNavRef.current) {
+      isKeyboardNavRef.current = false;
+      return;
+    }
     setSelectedProject(projectId);
     setProjectIndex(projectOptions.findIndex(p => p.id === projectId));
     createTask();
