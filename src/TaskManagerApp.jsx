@@ -3,6 +3,85 @@ import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListO
 import { getWorkingDaysUntilDue, formatDateToDDMMM, parseDueDate, addWorkingDays } from './utils/dateUtils';
 import { projectsAPI, tasksAPI, settingsAPI, personsAPI } from './api';
 
+// Custom Keyboard-navigable Select (works consistently across browsers including Edge)
+const KeyboardSelect = React.forwardRef(function KeyboardSelect({ 
+  value, 
+  options, 
+  onValueChange, 
+  onEnter, 
+  onEscape,
+  getColor,
+  displayKey = 'name',
+  valueKey = 'value',
+  placeholder = 'Select...',
+  isActive = false,
+  className = ''
+}, ref) {
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const idx = options.findIndex(opt => 
+      (typeof opt === 'string' ? opt : opt[valueKey]) === value
+    );
+    return idx >= 0 ? idx : 0;
+  });
+
+  // Update index when value changes externally
+  useEffect(() => {
+    const idx = options.findIndex(opt => 
+      (typeof opt === 'string' ? opt : opt[valueKey]) === value
+    );
+    if (idx >= 0) setCurrentIndex(idx);
+  }, [value, options, valueKey]);
+
+  const getCurrentOption = () => options[currentIndex];
+  const getOptionValue = (opt) => typeof opt === 'string' ? opt : opt[valueKey];
+  const getOptionDisplay = (opt) => typeof opt === 'string' ? opt : opt[displayKey];
+
+  const handleKeyDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      const newIndex = Math.max(0, currentIndex - 1);
+      setCurrentIndex(newIndex);
+      const newValue = getOptionValue(options[newIndex]);
+      onValueChange(newValue);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      const newIndex = Math.min(options.length - 1, currentIndex + 1);
+      setCurrentIndex(newIndex);
+      const newValue = getOptionValue(options[newIndex]);
+      onValueChange(newValue);
+    } else if (e.key === 'Enter') {
+      onEnter?.();
+    } else if (e.key === 'Escape') {
+      onEscape?.();
+    }
+  };
+
+  const currentOption = getCurrentOption();
+  const displayValue = currentOption ? getOptionDisplay(currentOption) : placeholder;
+  const bgColor = getColor ? getColor(getOptionValue(currentOption)) : undefined;
+  const textColor = bgColor === '#FFD93D' ? '#1D1D1F' : 'white';
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onKeyDown={handleKeyDown}
+      className={`px-4 py-3 rounded-lg border outline-none text-sm font-medium min-w-[120px] transition-all text-left ${
+        isActive 
+          ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm' 
+          : 'border-gray-200'
+      } ${className}`}
+      style={{
+        backgroundColor: bgColor || '#F9F9F9',
+        color: bgColor ? textColor : '#1D1D1F'
+      }}
+    >
+      {displayValue}
+    </button>
+  );
+});
+
 // Main App Component
 export default function TaskManagerApp() {
   const [currentView, setCurrentView] = useState('task');
@@ -1335,91 +1414,86 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
 
         {/* Type Selection */}
         {(step === 'type' || (step !== 'task' && selectedType)) && (
-          <div className="relative">
-            <select
-              ref={typeSelectRef}
-              value={selectedType}
-              onChange={(e) => handleTypeSelect(e.target.value)}
-              onKeyDown={handleTypeKeyDown}
-              className={`px-4 py-3 rounded-lg border outline-none text-sm cursor-pointer min-w-[120px] transition-all ${
-                step === 'type'
-                  ? 'bg-white border-[#0066CC] focus:ring-2 focus:ring-[#0066CC] shadow-sm text-white font-medium'
-                  : 'bg-[#F9F9F9] border-gray-200 text-white font-medium'
-              }`}
-              style={{
-                backgroundColor: step === 'type' || selectedType ? getTypeColor(selectedType) : undefined,
-                color: 'white'
-              }}
-            >
-              {types.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
+          <KeyboardSelect
+            ref={typeSelectRef}
+            value={selectedType}
+            options={types}
+            onValueChange={(val) => {
+              setSelectedType(val);
+              setTypeIndex(types.indexOf(val));
+            }}
+            onEnter={() => {
+              setStep('status');
+              setTimeout(() => statusSelectRef.current?.focus(), 50);
+            }}
+            onEscape={resetForm}
+            getColor={getTypeColor}
+            isActive={step === 'type'}
+          />
         )}
 
         {/* Status Selection */}
         {(step === 'status' || step === 'poc' || step === 'project') && selectedStatus && (
-          <div className="relative">
-            <select
-              ref={statusSelectRef}
-              value={selectedStatus}
-              onChange={(e) => handleStatusSelect(e.target.value)}
-              onKeyDown={handleStatusKeyDown}
-              className={`px-4 py-3 rounded-lg border outline-none text-sm cursor-pointer min-w-[140px] transition-all ${
-                step === 'status'
-                  ? 'bg-white border-[#0066CC] focus:ring-2 focus:ring-[#0066CC] shadow-sm text-white font-medium'
-                  : 'bg-[#F9F9F9] border-gray-200 text-white font-medium'
-              }`}
-              style={{
-                backgroundColor: step === 'status' || selectedStatus ? getStatusColor(selectedStatus) : undefined,
-                color: getStatusColor(selectedStatus) === '#FFD93D' ? '#1D1D1F' : 'white'
-              }}
-            >
-              {statuses.map(status => (
-                <option key={status.name} value={status.name}>{status.name}</option>
-              ))}
-            </select>
-          </div>
+          <KeyboardSelect
+            ref={statusSelectRef}
+            value={selectedStatus}
+            options={statuses.map(s => ({ name: s.name, value: s.name }))}
+            onValueChange={(val) => {
+              setSelectedStatus(val);
+              setStatusIndex(statuses.findIndex(s => s.name === val));
+            }}
+            onEnter={() => {
+              setStep('poc');
+              setTimeout(() => pocSelectRef.current?.focus(), 50);
+            }}
+            onEscape={resetForm}
+            getColor={getStatusColor}
+            displayKey="name"
+            valueKey="value"
+            isActive={step === 'status'}
+          />
         )}
 
         {/* POC Selection */}
         {(step === 'poc' || step === 'project') && (
-          <div className="relative">
-            <select
-              ref={pocSelectRef}
-              value={selectedPOC[0] || ''}
-              onChange={(e) => handlePOCSelect(e.target.value)}
-              onKeyDown={handlePOCKeyDown}
-              className={`px-4 py-3 rounded-lg border outline-none text-sm cursor-pointer min-w-[140px] transition-all ${
-                step === 'poc'
-                  ? 'bg-white border-[#0066CC] focus:ring-2 focus:ring-[#0066CC] shadow-sm'
-                  : 'bg-[#F9F9F9] border-gray-200'
-              }`}
-            >
-              <option value="">- (Unassigned)</option>
-              {(persons || []).map(person => (
-                <option key={person.id} value={person.id}>{person.name}</option>
-              ))}
-            </select>
-          </div>
+          <KeyboardSelect
+            ref={pocSelectRef}
+            value={selectedPOC[0] || ''}
+            options={[{ name: '- (Unassigned)', value: '' }, ...(persons || []).map(p => ({ name: p.name, value: p.id }))]}
+            onValueChange={(val) => {
+              if (val === '' || val === null) {
+                setSelectedPOC([]);
+                setPocIndex(-1);
+              } else {
+                setSelectedPOC([parseInt(val)]);
+                setPocIndex((persons || []).findIndex(p => p.id === parseInt(val)));
+              }
+            }}
+            onEnter={createTask}
+            onEscape={resetForm}
+            displayKey="name"
+            valueKey="value"
+            isActive={step === 'poc'}
+            placeholder="- (Unassigned)"
+          />
         )}
 
         {/* Project Selection */}
         {step === 'project' && (
-          <div className="relative">
-            <select
-              ref={projectSelectRef}
-              value={selectedProject || ''}
-              onChange={(e) => handleProjectSelect(e.target.value || null)}
-              onKeyDown={handleProjectKeyDown}
-              className="px-4 py-3 bg-white rounded-lg border border-[#0066CC] outline-none focus:ring-2 focus:ring-[#0066CC] text-sm cursor-pointer min-w-[140px] shadow-sm"
-            >
-              {projectOptions.map(project => (
-                <option key={project.id || 'none'} value={project.id || ''}>{project.name}</option>
-              ))}
-            </select>
-          </div>
+          <KeyboardSelect
+            ref={projectSelectRef}
+            value={selectedProject || ''}
+            options={projectOptions.map(p => ({ name: p.name, value: p.id || '' }))}
+            onValueChange={(val) => {
+              setSelectedProject(val || null);
+              setProjectIndex(projectOptions.findIndex(p => (p.id || '') === val));
+            }}
+            onEnter={createTask}
+            onEscape={resetForm}
+            displayKey="name"
+            valueKey="value"
+            isActive={step === 'project'}
+          />
         )}
 
         {/* Instructions */}
@@ -1433,13 +1507,13 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
           {step === 'type' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Use ↑↓ arrows, press Enter
+              ← → to change, Enter to continue
             </span>
           )}
           {step === 'status' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Use ↑↓ arrows, press Enter
+              ← → to change, Enter to continue
             </span>
           )}
           {step === 'poc' && (
@@ -1451,7 +1525,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
           {step === 'project' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Use ↑↓ arrows, press Enter to create
+              ← → to change, Enter to continue to create
             </span>
           )}
         </div>
@@ -1638,70 +1712,68 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
 
         {/* Type Selection */}
         {(step === 'type' || step === 'status' || step === 'poc') && (
-          <div className="relative">
-            <select
-              ref={typeSelectRef}
-              value={selectedType}
-              onChange={(e) => handleTypeSelect(e.target.value)}
-              onKeyDown={handleTypeKeyDown}
-              className={`px-4 py-3 rounded-lg border outline-none text-sm cursor-pointer min-w-[120px] transition-all ${
-                step === 'type'
-                  ? 'bg-white border-[#0066CC] focus:ring-2 focus:ring-[#0066CC] shadow-sm text-white font-medium'
-                  : 'bg-[#F9F9F9] border-gray-200 text-white font-medium'
-              }`}
-              style={{
-                backgroundColor: getTypeColor(selectedType),
-                color: 'white'
-              }}
-            >
-              {types.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
+          <KeyboardSelect
+            ref={typeSelectRef}
+            value={selectedType}
+            options={types}
+            onValueChange={(val) => {
+              setSelectedType(val);
+              setTypeIndex(types.indexOf(val));
+            }}
+            onEnter={() => {
+              setStep('status');
+              setTimeout(() => statusSelectRef.current?.focus(), 50);
+            }}
+            onEscape={resetForm}
+            getColor={getTypeColor}
+            isActive={step === 'type'}
+          />
         )}
 
         {/* Status Selection */}
         {(step === 'status' || step === 'poc') && (
-          <div className="relative">
-            <select
-              ref={statusSelectRef}
-              value={selectedStatus}
-              onChange={(e) => handleStatusSelect(e.target.value)}
-              onKeyDown={handleStatusKeyDown}
-              className={`px-4 py-3 rounded-lg border outline-none text-sm cursor-pointer min-w-[140px] transition-all ${
-                step === 'status'
-                  ? 'bg-white border-[#0066CC] focus:ring-2 focus:ring-[#0066CC] shadow-sm text-white font-medium'
-                  : 'bg-[#F9F9F9] border-gray-200 text-white font-medium'
-              }`}
-              style={{
-                backgroundColor: getStatusColor(selectedStatus),
-                color: getStatusColor(selectedStatus) === '#FFD93D' ? '#1D1D1F' : 'white'
-              }}
-            >
-              {statuses.map(status => (
-                <option key={status.name} value={status.name}>{status.name}</option>
-              ))}
-            </select>
-          </div>
+          <KeyboardSelect
+            ref={statusSelectRef}
+            value={selectedStatus}
+            options={statuses.map(s => ({ name: s.name, value: s.name }))}
+            onValueChange={(val) => {
+              setSelectedStatus(val);
+              setStatusIndex(statuses.findIndex(s => s.name === val));
+            }}
+            onEnter={() => {
+              setStep('poc');
+              setTimeout(() => pocSelectRef.current?.focus(), 50);
+            }}
+            onEscape={resetForm}
+            getColor={getStatusColor}
+            displayKey="name"
+            valueKey="value"
+            isActive={step === 'status'}
+          />
         )}
 
         {/* POC Selection */}
         {step === 'poc' && (
-          <div className="relative">
-            <select
-              ref={pocSelectRef}
-              value={selectedPOC[0] || ''}
-              onChange={(e) => handlePOCSelect(e.target.value)}
-              onKeyDown={handlePOCKeyDown}
-              className="px-4 py-3 rounded-lg border border-[#0066CC] outline-none focus:ring-2 focus:ring-[#0066CC] text-sm cursor-pointer min-w-[140px] shadow-sm bg-white"
-            >
-              <option value="">- (Unassigned)</option>
-              {(persons || []).map(person => (
-                <option key={person.id} value={person.id}>{person.name}</option>
-              ))}
-            </select>
-          </div>
+          <KeyboardSelect
+            ref={pocSelectRef}
+            value={selectedPOC[0] || ''}
+            options={[{ name: '- (Unassigned)', value: '' }, ...(persons || []).map(p => ({ name: p.name, value: p.id }))]}
+            onValueChange={(val) => {
+              if (val === '' || val === null) {
+                setSelectedPOC([]);
+                setPocIndex(-1);
+              } else {
+                setSelectedPOC([parseInt(val)]);
+                setPocIndex((persons || []).findIndex(p => p.id === parseInt(val)));
+              }
+            }}
+            onEnter={createTask}
+            onEscape={resetForm}
+            displayKey="name"
+            valueKey="value"
+            isActive={step === 'poc'}
+            placeholder="- (Unassigned)"
+          />
         )}
 
         {/* Instructions */}
@@ -1715,13 +1787,13 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
           {step === 'type' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Use ↑↓ arrows, press Enter
+              ← → to change, Enter to continue
             </span>
           )}
           {step === 'status' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Use ↑↓ arrows, press Enter
+              ← → to change, Enter to continue
             </span>
           )}
           {step === 'poc' && (
@@ -1930,57 +2002,70 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
       />
 
       {(step === 'type' || step === 'status' || step === 'project') && (
-        <select
+        <KeyboardSelect
           ref={typeSelectRef}
           value={selectedType}
-          onChange={(e) => handleTypeSelect(e.target.value)}
-          onKeyDown={handleTypeKeyDown}
-          className="px-3 py-2 rounded-lg border outline-none text-sm cursor-pointer min-w-[100px]"
-          style={{ backgroundColor: getTypeColor(selectedType), color: 'white' }}
-        >
-          {types.map(type => (
-            <option key={type} value={type}>{type}</option>
-          ))}
-        </select>
+          options={types}
+          onValueChange={(val) => {
+            setSelectedType(val);
+            setTypeIndex(types.indexOf(val));
+          }}
+          onEnter={() => {
+            setStep('status');
+            setTimeout(() => statusSelectRef.current?.focus(), 50);
+          }}
+          onEscape={resetForm}
+          getColor={getTypeColor}
+          isActive={step === 'type'}
+          className="px-3 py-2 min-w-[100px]"
+        />
       )}
 
       {(step === 'status' || step === 'project') && (
-        <select
+        <KeyboardSelect
           ref={statusSelectRef}
           value={selectedStatus}
-          onChange={(e) => handleStatusSelect(e.target.value)}
-          onKeyDown={handleStatusKeyDown}
-          className="px-3 py-2 rounded-lg border outline-none text-sm cursor-pointer min-w-[120px]"
-          style={{
-            backgroundColor: getStatusColor(selectedStatus),
-            color: getStatusColor(selectedStatus) === '#FFD93D' ? '#1D1D1F' : 'white'
+          options={statuses.map(s => ({ name: s.name, value: s.name }))}
+          onValueChange={(val) => {
+            setSelectedStatus(val);
+            setStatusIndex(statuses.findIndex(s => s.name === val));
           }}
-        >
-          {statuses.map(status => (
-            <option key={status.name} value={status.name}>{status.name}</option>
-          ))}
-        </select>
+          onEnter={() => {
+            setStep('project');
+            setTimeout(() => projectSelectRef.current?.focus(), 50);
+          }}
+          onEscape={resetForm}
+          getColor={getStatusColor}
+          displayKey="name"
+          valueKey="value"
+          isActive={step === 'status'}
+          className="px-3 py-2 min-w-[120px]"
+        />
       )}
 
       {step === 'project' && (
-        <select
+        <KeyboardSelect
           ref={projectSelectRef}
           value={selectedProject || ''}
-          onChange={(e) => handleProjectSelect(e.target.value || null)}
-          onKeyDown={handleProjectKeyDown}
-          className="px-3 py-2 bg-white rounded-lg border border-[#0066CC] outline-none text-sm cursor-pointer min-w-[120px]"
-        >
-          {projectOptions.map(project => (
-            <option key={project.id || 'none'} value={project.id || ''}>{project.name}</option>
-          ))}
-        </select>
+          options={projectOptions.map(p => ({ name: p.name, value: p.id || '' }))}
+          onValueChange={(val) => {
+            setSelectedProject(val || null);
+            setProjectIndex(projectOptions.findIndex(p => (p.id || '') === val));
+          }}
+          onEnter={createTask}
+          onEscape={resetForm}
+          displayKey="name"
+          valueKey="value"
+          isActive={step === 'project'}
+          className="px-3 py-2 min-w-[120px]"
+        />
       )}
 
       <span className="text-xs text-gray-400">
         {step === 'task' && 'Enter to continue'}
-        {step === 'type' && '↑↓ Enter'}
-        {step === 'status' && '↑↓ Enter'}
-        {step === 'project' && '↑↓ Enter to create'}
+        {step === 'type' && '←→ Enter'}
+        {step === 'status' && '←→ Enter'}
+        {step === 'project' && '←→ Enter to create'}
       </span>
     </div>
   );
