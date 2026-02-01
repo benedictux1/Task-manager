@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2, User, Users, ChevronsUp, ChevronsDown } from 'lucide-react';
+import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2, User, Users, ChevronsUp, ChevronsDown, GripVertical } from 'lucide-react';
 import { getWorkingDaysUntilDue, formatDateToDDMMM, parseDueDate, addWorkingDays } from './utils/dateUtils';
 import { projectsAPI, tasksAPI, settingsAPI, personsAPI } from './api';
 
@@ -103,16 +103,18 @@ export default function TaskManagerApp() {
     'Others': '#6F42C1'
   };
 
+  // Types are now stored as objects { name, color } like statuses
   const [types, setTypes] = useState([]);
-  const [typeColors, setTypeColors] = useState(defaultTypeColors);
 
   const [statuses, setStatuses] = useState([]);
   
   // Persons (POC - Point of Contact)
   const [persons, setPersons] = useState([]);
 
+  // Get type color from types array
   const getTypeColor = (typeName) => {
-    return typeColors[typeName] || '#0066CC';
+    const type = types.find(t => t.name === typeName);
+    return type?.color || defaultTypeColors[typeName] || '#0066CC';
   };
   
   const getPersonColor = (personId) => {
@@ -148,17 +150,20 @@ export default function TaskManagerApp() {
       setProjects(projectsData);
       setTasks(tasksData);
       
-      // Set types and create color map
+      // Set types as objects { name, color }
       if (settingsData.types && settingsData.types.length > 0) {
-        setTypes(settingsData.types.map(t => t.name));
-        const colorMap = {};
-        settingsData.types.forEach(t => {
-          colorMap[t.name] = t.color;
-        });
-        setTypeColors(colorMap);
+        setTypes(settingsData.types.map(t => ({ name: t.name, color: t.color })));
       } else {
-        // Fallback to defaults
-        setTypes(['Admin', 'Urgent', 'Regular', 'Night', 'Weekend', 'Backlog', 'Others']);
+        // Fallback to defaults with colors
+        setTypes([
+          { name: 'Urgent', color: '#DC3545' },
+          { name: 'Regular', color: '#0066CC' },
+          { name: 'Night', color: '#343A40' },
+          { name: 'Weekend', color: '#28A745' },
+          { name: 'Admin', color: '#6C757D' },
+          { name: 'Backlog', color: '#FFC107' },
+          { name: 'Others', color: '#6F42C1' }
+        ]);
       }
       
       // Set statuses
@@ -191,7 +196,15 @@ export default function TaskManagerApp() {
       setError(err.message);
       
       // Fallback to default data if API fails
-      setTypes(['Admin', 'Urgent', 'Regular', 'Night', 'Weekend', 'Backlog', 'Others']);
+      setTypes([
+        { name: 'Urgent', color: '#DC3545' },
+        { name: 'Regular', color: '#0066CC' },
+        { name: 'Night', color: '#343A40' },
+        { name: 'Weekend', color: '#28A745' },
+        { name: 'Admin', color: '#6C757D' },
+        { name: 'Backlog', color: '#FFC107' },
+        { name: 'Others', color: '#6F42C1' }
+      ]);
       setStatuses([
         { name: 'Must do', color: '#FF6B6B' },
         { name: 'Waiting others', color: '#1D1D1F' },
@@ -536,25 +549,34 @@ function ProjectView({
   const projectTasks = tasks.filter(t => t.projectId === selectedProjectId);
 
   const sortedTasks = useMemo(() => {
-    // Type priority: Urgent > Regular > Admin > Weekend > Backlog
-    const typeOrder = { 'Urgent': 1, 'Regular': 2, 'Admin': 3, 'Weekend': 4, 'Backlog': 5 };
-    // Status priority: Must do > My action > Waiting others > Done (at bottom)
-    const statusOrder = { 'Must do': 1, 'My action': 2, 'Waiting others': 3, 'Done': 99 };
+    // Build type order from types array (first = highest priority)
+    const typeOrderMap = {};
+    types.forEach((t, idx) => { typeOrderMap[t.name] = idx; });
+    
+    // Build status order from statuses array (first = highest priority)
+    const statusOrderMap = {};
+    statuses.forEach((s, idx) => { statusOrderMap[s.name] = idx; });
     
     return [...projectTasks].sort((a, b) => {
-      // Done tasks always at bottom
+      // Done tasks always at bottom, sorted by completedAt (most recent first)
       if (a.status === 'Done' && b.status !== 'Done') return 1;
       if (a.status !== 'Done' && b.status === 'Done') return -1;
+      if (a.status === 'Done' && b.status === 'Done') {
+        // Both done - sort by completedAt descending (most recent first)
+        const aTime = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+        const bTime = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+        return bTime - aTime;
+      }
       
-      // Sort by type first
-      const typeCompare = (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99);
+      // Sort by type first (using order from settings)
+      const typeCompare = (typeOrderMap[a.type] ?? 99) - (typeOrderMap[b.type] ?? 99);
       if (typeCompare !== 0) return typeCompare;
       
-      // Then sort by status within same type
-      const statusCompare = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+      // Then sort by status within same type (using order from settings)
+      const statusCompare = (statusOrderMap[a.status] ?? 99) - (statusOrderMap[b.status] ?? 99);
       return statusCompare;
     });
-  }, [projectTasks]);
+  }, [projectTasks, types, statuses]);
 
   const toggleSidebar = () => {
     setSidebarVisible(!sidebarVisible);
@@ -1169,7 +1191,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const [selectedStatus, setSelectedStatus] = useState('My action');
   const [selectedPOC, setSelectedPOC] = useState([]); // Array of person IDs
   const [selectedProject, setSelectedProject] = useState(null);
-  const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
+  const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
   const [pocIndex, setPocIndex] = useState(-1); // -1 means "unassigned"
   const [projectIndex, setProjectIndex] = useState(-1);
@@ -1331,7 +1353,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     // Reset to default project (General Tasks or first project)
     const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
     setSelectedProject(resetProjectId);
-    setTypeIndex(types.indexOf('Regular'));
+    setTypeIndex(types.findIndex(t => t.name === 'Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
     setPocIndex(-1);
     setProjectIndex(resetProjectId ? projects.findIndex(p => p.id === resetProjectId) : -1);
@@ -1348,7 +1370,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
       return;
     }
     setSelectedType(type);
-    setTypeIndex(types.indexOf(type));
+    setTypeIndex(types.findIndex(t => t.name === type));
     setStep('status');
     setTimeout(() => statusSelectRef.current?.focus(), 50);
   };
@@ -1420,7 +1442,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
             options={types}
             onValueChange={(val) => {
               setSelectedType(val);
-              setTypeIndex(types.indexOf(val));
+              setTypeIndex(types.findIndex(t => t.name === val));
             }}
             onEnter={() => {
               setStep('status');
@@ -1428,6 +1450,8 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
             }}
             onEscape={resetForm}
             getColor={getTypeColor}
+            displayKey="name"
+            valueKey="name"
             isActive={step === 'type'}
           />
         )}
@@ -1541,7 +1565,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
   const [selectedPOC, setSelectedPOC] = useState(defaultPersonId ? [defaultPersonId] : []);
-  const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
+  const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
   const [pocIndex, setPocIndex] = useState(defaultPersonId ? (persons || []).findIndex(p => p.id === defaultPersonId) : -1);
 
@@ -1648,7 +1672,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
     setSelectedType('Regular');
     setSelectedStatus('My action');
     setSelectedPOC(defaultPersonId ? [defaultPersonId] : []);
-    setTypeIndex(types.indexOf('Regular'));
+    setTypeIndex(types.findIndex(t => t.name === 'Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
     setPocIndex(defaultPersonId ? (persons || []).findIndex(p => p.id === defaultPersonId) : -1);
     setTimeout(() => taskInputRef.current?.focus(), 50);
@@ -1660,7 +1684,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
       return;
     }
     setSelectedType(type);
-    setTypeIndex(types.indexOf(type));
+    setTypeIndex(types.findIndex(t => t.name === type));
     setStep('status');
     setTimeout(() => statusSelectRef.current?.focus(), 50);
   };
@@ -1718,7 +1742,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
             options={types}
             onValueChange={(val) => {
               setSelectedType(val);
-              setTypeIndex(types.indexOf(val));
+              setTypeIndex(types.findIndex(t => t.name === val));
             }}
             onEnter={() => {
               setStep('status');
@@ -1726,6 +1750,8 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
             }}
             onEscape={resetForm}
             getColor={getTypeColor}
+            displayKey="name"
+            valueKey="name"
             isActive={step === 'type'}
           />
         )}
@@ -1815,7 +1841,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
   const [selectedProject, setSelectedProject] = useState(null);
-  const [typeIndex, setTypeIndex] = useState(types.indexOf('Regular'));
+  const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
   const [projectIndex, setProjectIndex] = useState(-1);
 
@@ -1948,7 +1974,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
     // Reset to default project
     const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
     setSelectedProject(resetProjectId);
-    setTypeIndex(types.indexOf('Regular'));
+    setTypeIndex(types.findIndex(t => t.name === 'Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
     setProjectIndex(resetProjectId ? projects.findIndex(p => p.id === resetProjectId) : -1);
   };
@@ -1959,7 +1985,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
       return;
     }
     setSelectedType(type);
-    setTypeIndex(types.indexOf(type));
+    setTypeIndex(types.findIndex(t => t.name === type));
     setStep('status');
     setTimeout(() => statusSelectRef.current?.focus(), 50);
   };
@@ -2008,7 +2034,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
           options={types}
           onValueChange={(val) => {
             setSelectedType(val);
-            setTypeIndex(types.indexOf(val));
+            setTypeIndex(types.findIndex(t => t.name === val));
           }}
           onEnter={() => {
             setStep('status');
@@ -2016,6 +2042,8 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
           }}
           onEscape={resetForm}
           getColor={getTypeColor}
+          displayKey="name"
+          valueKey="name"
           isActive={step === 'type'}
           className="px-3 py-2 min-w-[100px]"
         />
@@ -2097,22 +2125,31 @@ function TaskView({
       return true;
     });
 
-    // Type priority: Urgent > Regular > Admin > Weekend > Backlog
-    const typeOrder = { 'Urgent': 1, 'Regular': 2, 'Admin': 3, 'Weekend': 4, 'Backlog': 5 };
-    // Status priority: Must do > My action > Waiting others > Done (at bottom)
-    const statusOrder = { 'Must do': 1, 'My action': 2, 'Waiting others': 3, 'Done': 99 };
+    // Build type order from types array (first = highest priority)
+    const typeOrderMap = {};
+    types.forEach((t, idx) => { typeOrderMap[t.name] = idx; });
+    
+    // Build status order from statuses array (first = highest priority)
+    const statusOrderMap = {};
+    statuses.forEach((s, idx) => { statusOrderMap[s.name] = idx; });
     
     filtered.sort((a, b) => {
-      // Done tasks always at bottom
+      // Done tasks always at bottom, sorted by completedAt (most recent first)
       if (a.status === 'Done' && b.status !== 'Done') return 1;
       if (a.status !== 'Done' && b.status === 'Done') return -1;
+      if (a.status === 'Done' && b.status === 'Done') {
+        // Both done - sort by completedAt descending (most recent first)
+        const aTime = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+        const bTime = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+        return bTime - aTime;
+      }
 
-      // Sort by type first
-      const typeCompare = (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99);
+      // Sort by type first (using order from settings)
+      const typeCompare = (typeOrderMap[a.type] ?? 99) - (typeOrderMap[b.type] ?? 99);
       if (typeCompare !== 0) return typeCompare;
 
-      // Then sort by status within same type
-      const statusCompare = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+      // Then sort by status within same type (using order from settings)
+      const statusCompare = (statusOrderMap[a.status] ?? 99) - (statusOrderMap[b.status] ?? 99);
       if (statusCompare !== 0) return statusCompare;
 
       if (a.dueDate && !b.dueDate) return -1;
@@ -2121,7 +2158,7 @@ function TaskView({
     });
 
     return filtered;
-  }, [tasks, filterType, filterStatus, filterProject, filterPOC, searchQuery, projects]);
+  }, [tasks, filterType, filterStatus, filterProject, filterPOC, searchQuery, projects, types, statuses]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -2134,7 +2171,7 @@ function TaskView({
             placeholder="Search tasks..."
             className="flex-1 min-w-[150px] sm:min-w-[200px] px-3 sm:px-4 py-2 bg-[#F5F5F7] rounded-lg border-none outline-none focus:ring-2 focus:ring-[#0066CC] text-[#1D1D1F] text-sm"
           />
-          <MultiSelect label="Type" options={types} selected={filterType} onChange={setFilterType} />
+          <MultiSelect label="Type" options={types.map(t => t.name)} selected={filterType} onChange={setFilterType} />
           <MultiSelect label="Status" options={statuses.map(s => s.name)} selected={filterStatus} onChange={setFilterStatus} />
           <MultiSelect label="Project" options={[{id: null, name: 'No Project'}, ...projects.map(p => ({ id: p.id, name: p.name }))]} selected={filterProject} onChange={setFilterProject} useIds={true} />
           <MultiSelect label="POC" options={persons.map(p => ({ id: p.id, name: p.name }))} selected={filterPOC} onChange={setFilterPOC} useIds={true} />
@@ -2672,22 +2709,25 @@ function TypeDropdown({ value, options, onChange, getTypeColor, className = '', 
         <>
           <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
           <div className="absolute top-full left-0 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
-            {options.map(option => (
-              <button
-                key={option}
-                onClick={() => {
-                  onChange(option);
-                  setIsOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-[#F5F5F7] text-sm flex items-center gap-2"
-              >
-                <span
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: getTypeColor(option) }}
-                />
-                <span className="text-[#1D1D1F]">{option}</span>
-              </button>
-            ))}
+            {options.map(option => {
+              const typeName = typeof option === 'string' ? option : option.name;
+              return (
+                <button
+                  key={typeName}
+                  onClick={() => {
+                    onChange(typeName);
+                    setIsOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-[#F5F5F7] text-sm flex items-center gap-2"
+                >
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: getTypeColor(typeName) }}
+                  />
+                  <span className="text-[#1D1D1F]">{typeName}</span>
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -3136,24 +3176,33 @@ function PersonView({
 
   // Get tasks for a person
   const getTasksForPerson = (personId) => {
-    // Type priority: Urgent > Regular > Admin > Weekend > Backlog
-    const typeOrder = { 'Urgent': 1, 'Regular': 2, 'Admin': 3, 'Weekend': 4, 'Backlog': 5 };
-    // Status priority: Must do > My action > Waiting others > Done (at bottom)
-    const statusOrder = { 'Must do': 1, 'My action': 2, 'Waiting others': 3, 'Done': 99 };
+    // Build type order from types array (first = highest priority)
+    const typeOrderMap = {};
+    types.forEach((t, idx) => { typeOrderMap[t.name] = idx; });
+    
+    // Build status order from statuses array (first = highest priority)
+    const statusOrderMap = {};
+    statuses.forEach((s, idx) => { statusOrderMap[s.name] = idx; });
     
     return tasks
       .filter(task => task.personIds && task.personIds.includes(personId))
       .sort((a, b) => {
-        // Done tasks always at bottom
+        // Done tasks always at bottom, sorted by completedAt (most recent first)
         if (a.status === 'Done' && b.status !== 'Done') return 1;
         if (a.status !== 'Done' && b.status === 'Done') return -1;
+        if (a.status === 'Done' && b.status === 'Done') {
+          // Both done - sort by completedAt descending (most recent first)
+          const aTime = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+          const bTime = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+          return bTime - aTime;
+        }
         
-        // Sort by type first
-        const typeCompare = (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99);
+        // Sort by type first (using order from settings)
+        const typeCompare = (typeOrderMap[a.type] ?? 99) - (typeOrderMap[b.type] ?? 99);
         if (typeCompare !== 0) return typeCompare;
         
-        // Then sort by status within same type
-        const statusCompare = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+        // Then sort by status within same type (using order from settings)
+        const statusCompare = (statusOrderMap[a.status] ?? 99) - (statusOrderMap[b.status] ?? 99);
         return statusCompare;
       });
   };
@@ -3337,19 +3386,70 @@ function PersonView({
 
 // Settings Modal Component (SMALLER - 20% reduction)
 function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPersons, onClose }) {
-  const [newType, setNewType] = useState('');
+  const [newType, setNewType] = useState({ name: '', color: '#0066CC' });
   const [newStatus, setNewStatus] = useState({ name: '', color: '#0066CC' });
   const [newPerson, setNewPerson] = useState({ name: '', color: '' });
+  const [draggedTypeIndex, setDraggedTypeIndex] = useState(null);
+  const [draggedStatusIndex, setDraggedStatusIndex] = useState(null);
 
+  // Type functions
   const addType = () => {
-    if (newType.trim() && !types.includes(newType.trim())) {
-      setTypes([...types, newType.trim()]);
-      setNewType('');
+    if (newType.name.trim() && !types.find(t => t.name === newType.name.trim())) {
+      setTypes([...types, { name: newType.name.trim(), color: newType.color }]);
+      setNewType({ name: '', color: '#0066CC' });
     }
   };
 
-  const removeType = (type) => {
-    setTypes(types.filter(t => t !== type));
+  const removeType = (typeName) => {
+    setTypes(types.filter(t => t.name !== typeName));
+  };
+
+  const updateTypeColor = (typeName, color) => {
+    setTypes(types.map(t =>
+      t.name === typeName ? { ...t, color } : t
+    ));
+  };
+
+  // Drag and drop for types
+  const handleTypeDragStart = (index) => {
+    setDraggedTypeIndex(index);
+  };
+
+  const handleTypeDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedTypeIndex === null || draggedTypeIndex === index) return;
+    
+    const newTypes = [...types];
+    const draggedItem = newTypes[draggedTypeIndex];
+    newTypes.splice(draggedTypeIndex, 1);
+    newTypes.splice(index, 0, draggedItem);
+    setTypes(newTypes);
+    setDraggedTypeIndex(index);
+  };
+
+  const handleTypeDragEnd = () => {
+    setDraggedTypeIndex(null);
+  };
+
+  // Drag and drop for statuses
+  const handleStatusDragStart = (index) => {
+    setDraggedStatusIndex(index);
+  };
+
+  const handleStatusDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedStatusIndex === null || draggedStatusIndex === index) return;
+    
+    const newStatuses = [...statuses];
+    const draggedItem = newStatuses[draggedStatusIndex];
+    newStatuses.splice(draggedStatusIndex, 1);
+    newStatuses.splice(index, 0, draggedItem);
+    setStatuses(newStatuses);
+    setDraggedStatusIndex(index);
+  };
+
+  const handleStatusDragEnd = () => {
+    setDraggedStatusIndex(null);
   };
 
   const addStatus = () => {
@@ -3433,12 +3533,36 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPer
         <div className="p-4 space-y-6 max-h-[60vh] overflow-y-auto">
           {/* Task Types Section */}
           <div>
-            <h3 className="text-sm font-semibold text-[#1D1D1F] mb-3">Task Types</h3>
+            <h3 className="text-sm font-semibold text-[#1D1D1F] mb-1">Task Types</h3>
+            <p className="text-xs text-gray-500 mb-3">Drag to reorder. Order determines sorting priority.</p>
             <div className="space-y-1.5 mb-3">
-              {types.map(type => (
-                <div key={type} className="flex items-center justify-between p-2 bg-[#F5F5F7] rounded-lg">
-                  <span className="text-sm text-[#1D1D1F]">{type}</span>
-                  <button onClick={() => removeType(type)} className="p-1 hover:bg-red-100 rounded transition-colors">
+              {types.map((type, index) => (
+                <div 
+                  key={type.name} 
+                  draggable
+                  onDragStart={() => handleTypeDragStart(index)}
+                  onDragOver={(e) => handleTypeDragOver(e, index)}
+                  onDragEnd={handleTypeDragEnd}
+                  className={`flex items-center justify-between p-2 bg-[#F5F5F7] rounded-lg cursor-move ${
+                    draggedTypeIndex === index ? 'opacity-50' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="w-4 h-4 text-gray-400" />
+                    <input
+                      type="color"
+                      value={type.color || '#0066CC'}
+                      onChange={(e) => updateTypeColor(type.name, e.target.value)}
+                      className="w-7 h-7 rounded cursor-pointer border-2 border-gray-300"
+                    />
+                    <div
+                      className="px-3 py-1 rounded-lg text-xs font-medium"
+                      style={{ backgroundColor: type.color || '#0066CC', color: 'white' }}
+                    >
+                      {type.name}
+                    </div>
+                  </div>
+                  <button onClick={() => removeType(type.name)} className="p-1 hover:bg-red-100 rounded transition-colors">
                     <X className="w-3.5 h-3.5 text-red-500" />
                   </button>
                 </div>
@@ -3447,11 +3571,17 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPer
             <div className="flex gap-2">
               <input
                 type="text"
-                value={newType}
-                onChange={(e) => setNewType(e.target.value)}
+                value={newType.name}
+                onChange={(e) => setNewType({ ...newType, name: e.target.value })}
                 onKeyPress={(e) => e.key === 'Enter' && addType()}
                 placeholder="New type name..."
                 className="flex-1 px-3 py-2 text-sm bg-[#F5F5F7] rounded-lg border-none outline-none focus:ring-2 focus:ring-[#0066CC] text-[#1D1D1F]"
+              />
+              <input
+                type="color"
+                value={newType.color}
+                onChange={(e) => setNewType({ ...newType, color: e.target.value })}
+                className="w-10 h-10 rounded cursor-pointer border-2 border-gray-300"
               />
               <button onClick={addType} className="px-4 py-2 text-sm bg-[#0066CC] text-white rounded-lg hover:bg-[#0052A3] transition-colors font-medium">
                 Add
@@ -3461,11 +3591,22 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPer
 
           {/* Task Statuses Section */}
           <div>
-            <h3 className="text-sm font-semibold text-[#1D1D1F] mb-3">Task Statuses</h3>
+            <h3 className="text-sm font-semibold text-[#1D1D1F] mb-1">Task Statuses</h3>
+            <p className="text-xs text-gray-500 mb-3">Drag to reorder. Order determines sorting priority within each type.</p>
             <div className="space-y-1.5 mb-3">
-              {statuses.map(status => (
-                <div key={status.name} className="flex items-center justify-between p-2 bg-[#F5F5F7] rounded-lg">
+              {statuses.map((status, index) => (
+                <div 
+                  key={status.name} 
+                  draggable
+                  onDragStart={() => handleStatusDragStart(index)}
+                  onDragOver={(e) => handleStatusDragOver(e, index)}
+                  onDragEnd={handleStatusDragEnd}
+                  className={`flex items-center justify-between p-2 bg-[#F5F5F7] rounded-lg cursor-move ${
+                    draggedStatusIndex === index ? 'opacity-50' : ''
+                  }`}
+                >
                   <div className="flex items-center gap-2">
+                    <GripVertical className="w-4 h-4 text-gray-400" />
                     <input
                       type="color"
                       value={status.color}

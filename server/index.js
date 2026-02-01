@@ -226,9 +226,24 @@ app.put('/api/tasks/:id', async (req, res) => {
     if (name !== undefined) updateData.name = name;
     if (projectId !== undefined) updateData.projectId = parseInt(projectId);
     if (type !== undefined) updateData.type = type;
-    if (status !== undefined) updateData.status = status;
     if (dueDate !== undefined) updateData.dueDate = dueDate;
     if (notes !== undefined) updateData.notes = notes;
+    
+    // Handle status change and completedAt timestamp
+    if (status !== undefined) {
+      updateData.status = status;
+      
+      // Get current task to check if status is changing
+      const currentTask = await prisma.task.findUnique({ where: { id: taskId } });
+      
+      if (status === 'Done' && currentTask?.status !== 'Done') {
+        // Task is being marked as Done - set completedAt timestamp
+        updateData.completedAt = new Date();
+      } else if (status !== 'Done' && currentTask?.status === 'Done') {
+        // Task is being unmarked from Done - clear completedAt
+        updateData.completedAt = null;
+      }
+    }
     
     // Update task basic fields
     const task = await prisma.task.update({
