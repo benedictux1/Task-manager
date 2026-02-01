@@ -2311,10 +2311,10 @@ function ProjectTaskTableRow({ task, types, statuses, persons, getStatusColor, g
         )}
       </td>
       <td className="px-4 py-3">
-        <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} compact={true} />
+        <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} compact={true} isDone={isDone} />
       </td>
       <td className="px-4 py-3">
-        <StatusDropdown value={task.status} options={statuses} onChange={(value) => updateTask(task.id, 'status', value)} getStatusColor={getStatusColor} compact={true} />
+        <StatusDropdown value={task.status} options={statuses} onChange={(value) => updateTask(task.id, 'status', value)} getStatusColor={getStatusColor} compact={true} isDone={isDone} />
       </td>
       <td className="px-4 py-3 relative">
         {showDatePicker ? (
@@ -2445,8 +2445,8 @@ function TaskRow({ task, types, statuses, getStatusColor, getTypeColor, updateTa
           </span>
         )}
 
-        <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} className="min-w-[100px]" />
-        <StatusDropdown value={task.status} options={statuses} onChange={(value) => updateTask(task.id, 'status', value)} getStatusColor={getStatusColor} className="min-w-[120px]" />
+        <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} className="min-w-[100px]" isDone={isDone} />
+        <StatusDropdown value={task.status} options={statuses} onChange={(value) => updateTask(task.id, 'status', value)} getStatusColor={getStatusColor} className="min-w-[120px]" isDone={isDone} />
 
         {showDatePicker ? (
           <input
@@ -2584,10 +2584,10 @@ function TaskTableRow({ task, project, types, statuses, persons, getStatusColor,
         )}
       </td>
       <td className="px-4 py-3">
-        <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} compact={true} />
+        <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} compact={true} isDone={isDone} />
       </td>
       <td className="px-4 py-3">
-        <StatusDropdown value={task.status} options={statuses} onChange={(value) => updateTask(task.id, 'status', value)} getStatusColor={getStatusColor} compact={true} />
+        <StatusDropdown value={task.status} options={statuses} onChange={(value) => updateTask(task.id, 'status', value)} getStatusColor={getStatusColor} compact={true} isDone={isDone} />
       </td>
       <td className="px-4 py-3 relative">
         {showDatePicker ? (
@@ -2688,7 +2688,7 @@ function Dropdown({ value, options, onChange, className = '', compact = false })
 }
 
 // Type Dropdown Component
-function TypeDropdown({ value, options, onChange, getTypeColor, className = '', compact = false }) {
+function TypeDropdown({ value, options, onChange, getTypeColor, className = '', compact = false, isDone = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const typeColor = getTypeColor(value);
 
@@ -2698,7 +2698,7 @@ function TypeDropdown({ value, options, onChange, getTypeColor, className = '', 
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg hover:opacity-80 transition-opacity ${
           compact ? 'text-sm' : ''
-        }`}
+        } ${isDone ? 'opacity-40' : ''}`}
         style={{ backgroundColor: typeColor, color: 'white' }}
       >
         <span>{value}</span>
@@ -2736,7 +2736,7 @@ function TypeDropdown({ value, options, onChange, getTypeColor, className = '', 
 }
 
 // Status Dropdown Component
-function StatusDropdown({ value, options, onChange, getStatusColor, className = '', compact = false }) {
+function StatusDropdown({ value, options, onChange, getStatusColor, className = '', compact = false, isDone = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const statusColor = getStatusColor(value);
 
@@ -2746,7 +2746,7 @@ function StatusDropdown({ value, options, onChange, getStatusColor, className = 
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg hover:opacity-80 transition-opacity ${
           compact ? 'text-sm' : ''
-        }`}
+        } ${isDone ? 'opacity-40' : ''}`}
         style={{ backgroundColor: statusColor, color: statusColor === '#FFD93D' ? '#1D1D1F' : 'white' }}
       >
         <span>{value}</span>
