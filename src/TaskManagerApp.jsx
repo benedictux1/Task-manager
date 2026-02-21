@@ -10,6 +10,8 @@ const KeyboardSelect = React.forwardRef(function KeyboardSelect({
   onValueChange, 
   onEnter, 
   onEscape,
+  onLeft,  // Navigate to previous step
+  onRight, // Navigate to next step
   getColor,
   displayKey = 'name',
   valueKey = 'value',
@@ -40,16 +42,24 @@ const KeyboardSelect = React.forwardRef(function KeyboardSelect({
     e.preventDefault();
     e.stopPropagation();
 
-    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+    if (e.key === 'ArrowUp') {
+      // Up: Change value (previous option)
       const newIndex = Math.max(0, currentIndex - 1);
       setCurrentIndex(newIndex);
       const newValue = getOptionValue(options[newIndex]);
       onValueChange(newValue);
-    } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+    } else if (e.key === 'ArrowDown') {
+      // Down: Change value (next option)
       const newIndex = Math.min(options.length - 1, currentIndex + 1);
       setCurrentIndex(newIndex);
       const newValue = getOptionValue(options[newIndex]);
       onValueChange(newValue);
+    } else if (e.key === 'ArrowLeft') {
+      // Left: Navigate to previous step
+      onLeft?.();
+    } else if (e.key === 'ArrowRight') {
+      // Right: Navigate to next step
+      onRight?.();
     } else if (e.key === 'Enter') {
       onEnter?.();
     } else if (e.key === 'Escape') {
@@ -1185,10 +1195,14 @@ function SizeDropdownSelect({ options, onSelect, editorRef }) {
 
 // Inline Task Creator Component
 function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor, getTypeColor, onAdd }) {
-  const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'poc', 'project'
+  // Steps: task → type → status → dueDate → poc → create
+  const [step, setStep] = useState('task');
   const [taskName, setTaskName] = useState('');
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
+  const [dueInDays, setDueInDays] = useState(7); // Default 7 working days
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false);
+  const [customDueDate, setCustomDueDate] = useState(null); // For calendar picker
   const [selectedPOC, setSelectedPOC] = useState([]); // Array of person IDs
   const [selectedProject, setSelectedProject] = useState(null);
   const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
@@ -1199,6 +1213,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const taskInputRef = useRef(null);
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
+  const dueDateRef = useRef(null);
   const pocSelectRef = useRef(null);
   const projectSelectRef = useRef(null);
 
@@ -1214,41 +1229,69 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     }
   }, [defaultProjectId, projects]);
 
-  const projectOptions = [...projects]; // No "No Project" option - always assign to a project
+  const projectOptions = [...projects];
   const pocOptions = [{ id: null, name: '- (Unassigned)' }, ...(persons || [])];
+
+  // Navigation helpers - define the step order
+  const stepOrder = ['type', 'status', 'dueDate', 'poc'];
+  
+  const goToStep = (newStep) => {
+    setStep(newStep);
+    setTimeout(() => {
+      if (newStep === 'type') typeSelectRef.current?.focus();
+      else if (newStep === 'status') statusSelectRef.current?.focus();
+      else if (newStep === 'dueDate') dueDateRef.current?.focus();
+      else if (newStep === 'poc') pocSelectRef.current?.focus();
+    }, 50);
+  };
+
+  const goToPrevStep = () => {
+    const currentIdx = stepOrder.indexOf(step);
+    if (currentIdx > 0) {
+      goToStep(stepOrder[currentIdx - 1]);
+    }
+  };
+
+  const goToNextStep = () => {
+    const currentIdx = stepOrder.indexOf(step);
+    if (currentIdx < stepOrder.length - 1) {
+      goToStep(stepOrder[currentIdx + 1]);
+    } else {
+      // On last step, create task
+      createTask();
+    }
+  };
 
   const handleTaskKeyDown = (e) => {
     if (e.key === 'Enter' && taskName.trim()) {
-      setStep('type');
-      setTimeout(() => typeSelectRef.current?.focus(), 50);
+      goToStep('type');
     }
   };
 
   const handleTypeKeyDown = (e) => {
-    // Mark as keyboard navigation to prevent Edge from double-firing onChange
-    isKeyboardNavRef.current = true;
     e.preventDefault();
     e.stopPropagation();
     
     if (e.key === 'ArrowUp') {
       const newIndex = Math.max(0, typeIndex - 1);
       setTypeIndex(newIndex);
-      setSelectedType(types[newIndex]);
+      setSelectedType(types[newIndex].name);
     } else if (e.key === 'ArrowDown') {
       const newIndex = Math.min(types.length - 1, typeIndex + 1);
       setTypeIndex(newIndex);
-      setSelectedType(types[newIndex]);
+      setSelectedType(types[newIndex].name);
+    } else if (e.key === 'ArrowLeft') {
+      // Can't go back from type (first editable step)
+    } else if (e.key === 'ArrowRight') {
+      goToStep('status');
     } else if (e.key === 'Enter') {
-      setStep('status');
-      setTimeout(() => statusSelectRef.current?.focus(), 50);
+      goToNextStep();
     } else if (e.key === 'Escape') {
       resetForm();
     }
   };
 
   const handleStatusKeyDown = (e) => {
-    // Mark as keyboard navigation to prevent Edge from double-firing onChange
-    isKeyboardNavRef.current = true;
     e.preventDefault();
     e.stopPropagation();
     
@@ -1260,17 +1303,39 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
       const newIndex = Math.min(statuses.length - 1, statusIndex + 1);
       setStatusIndex(newIndex);
       setSelectedStatus(statuses[newIndex].name);
+    } else if (e.key === 'ArrowLeft') {
+      goToStep('type');
+    } else if (e.key === 'ArrowRight') {
+      goToStep('dueDate');
     } else if (e.key === 'Enter') {
-      setStep('poc');
-      setTimeout(() => pocSelectRef.current?.focus(), 50);
+      goToNextStep();
+    } else if (e.key === 'Escape') {
+      resetForm();
+    }
+  };
+
+  const handleDueDateKeyDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (e.key === 'ArrowUp') {
+      setDueInDays(prev => prev + 1);
+      setCustomDueDate(null); // Clear custom date when using keyboard
+    } else if (e.key === 'ArrowDown') {
+      setDueInDays(prev => Math.max(0, prev - 1));
+      setCustomDueDate(null);
+    } else if (e.key === 'ArrowLeft') {
+      goToStep('status');
+    } else if (e.key === 'ArrowRight') {
+      goToStep('poc');
+    } else if (e.key === 'Enter') {
+      goToNextStep();
     } else if (e.key === 'Escape') {
       resetForm();
     }
   };
 
   const handlePOCKeyDown = (e) => {
-    // Mark as keyboard navigation to prevent Edge from double-firing onChange
-    isKeyboardNavRef.current = true;
     e.preventDefault();
     e.stopPropagation();
     
@@ -1282,9 +1347,10 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
       const newIndex = Math.min(pocOptions.length - 2, pocIndex + 1);
       setPocIndex(newIndex);
       setSelectedPOC(newIndex === -1 ? [] : [pocOptions[newIndex + 1].id]);
-    } else if (e.key === 'Tab' || (e.key === 'Enter' && e.shiftKey)) {
-      setStep('project');
-      setTimeout(() => projectSelectRef.current?.focus(), 50);
+    } else if (e.key === 'ArrowLeft') {
+      goToStep('dueDate');
+    } else if (e.key === 'ArrowRight') {
+      // Can't go forward from POC (last step before create)
     } else if (e.key === 'Enter') {
       createTask();
     } else if (e.key === 'Escape') {
@@ -1292,43 +1358,41 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     }
   };
 
-  const handleProjectKeyDown = (e) => {
-    // Mark as keyboard navigation to prevent Edge from double-firing onChange
-    isKeyboardNavRef.current = true;
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.key === 'ArrowUp') {
-      const newIndex = Math.max(0, projectIndex - 1);
-      setProjectIndex(newIndex);
-      setSelectedProject(projectOptions[newIndex].id);
-    } else if (e.key === 'ArrowDown') {
-      const newIndex = Math.min(projectOptions.length - 1, projectIndex + 1);
-      setProjectIndex(newIndex);
-      setSelectedProject(projectOptions[newIndex].id);
-    } else if (e.key === 'Enter') {
-      createTask();
-    } else if (e.key === 'Escape') {
-      resetForm();
+  const handleDatePickerChange = (e) => {
+    const dateValue = e.target.value;
+    if (dateValue) {
+      const selectedDate = new Date(dateValue);
+      setCustomDueDate(selectedDate);
+      // Calculate working days from today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      selectedDate.setHours(0, 0, 0, 0);
+      const diffTime = selectedDate - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      setDueInDays(Math.max(0, diffDays));
     }
+    setShowDueDatePicker(false);
   };
 
   const createTask = () => {
     if (!taskName.trim()) return;
 
-    // Use selectedProject, or fall back to defaultProjectId
     const projectId = selectedProject || defaultProjectId;
     
-    // Don't create task without a valid project
     if (!projectId) {
       console.error('Cannot create task: no project available');
       alert('Please wait for projects to load, or select a project.');
       return;
     }
 
-    // Set due date to 1 week from today
-    const oneWeekLater = addWorkingDays(new Date(), 7);
-    const dueDate = formatDateToDDMMM(oneWeekLater);
+    // Calculate due date from dueInDays or use custom date
+    let dueDate;
+    if (customDueDate) {
+      dueDate = formatDateToDDMMM(customDueDate);
+    } else {
+      const dueDateObj = addWorkingDays(new Date(), dueInDays);
+      dueDate = formatDateToDDMMM(dueDateObj);
+    }
 
     const newTask = {
       name: taskName.trim(),
@@ -1339,7 +1403,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
       personIds: selectedPOC.filter(id => id !== null)
     };
 
-    console.log('Creating task:', newTask); // Debug log
+    console.log('Creating task:', newTask);
     onAdd(newTask);
     resetForm();
   };
@@ -1349,8 +1413,10 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setTaskName('');
     setSelectedType('Regular');
     setSelectedStatus('My action');
+    setDueInDays(7);
+    setCustomDueDate(null);
+    setShowDueDatePicker(false);
     setSelectedPOC([]);
-    // Reset to default project (General Tasks or first project)
     const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
     setSelectedProject(resetProjectId);
     setTypeIndex(types.findIndex(t => t.name === 'Regular'));
@@ -1360,65 +1426,13 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setTimeout(() => taskInputRef.current?.focus(), 50);
   };
 
-  // Track if we're handling a keyboard event (to prevent Edge from double-firing)
-  const isKeyboardNavRef = useRef(false);
-
-  const handleTypeSelect = (type) => {
-    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedType(type);
-    setTypeIndex(types.findIndex(t => t.name === type));
-    setStep('status');
-    setTimeout(() => statusSelectRef.current?.focus(), 50);
-  };
-
-  const handleStatusSelect = (statusName) => {
-    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedStatus(statusName);
-    setStatusIndex(statuses.findIndex(s => s.name === statusName));
-    setStep('poc');
-    setTimeout(() => pocSelectRef.current?.focus(), 50);
-  };
-
-  const handlePOCSelect = (personId) => {
-    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    if (personId === null || personId === '') {
-      setSelectedPOC([]);
-      setPocIndex(-1);
-    } else {
-      setSelectedPOC([parseInt(personId)]);
-      setPocIndex(pocOptions.findIndex(p => p.id === parseInt(personId)) - 1);
-    }
-    setStep('project');
-    setTimeout(() => projectSelectRef.current?.focus(), 50);
-  };
-
-  const handleProjectSelect = (projectId) => {
-    // Ignore onChange if triggered by keyboard (we handle that in onKeyDown)
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedProject(projectId);
-    setProjectIndex(projectOptions.findIndex(p => p.id === projectId));
-    createTask();
-  };
+  // Check if we're past the task step
+  const isPastTask = step !== 'task';
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="flex items-center gap-3 flex-wrap">
-        {/* Task Name Input - Takes more space */}
+        {/* Task Name Input */}
         <input
           ref={taskInputRef}
           type="text"
@@ -1435,7 +1449,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
         />
 
         {/* Type Selection */}
-        {(step === 'type' || (step !== 'task' && selectedType)) && (
+        {isPastTask && (
           <KeyboardSelect
             ref={typeSelectRef}
             value={selectedType}
@@ -1444,11 +1458,10 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
               setSelectedType(val);
               setTypeIndex(types.findIndex(t => t.name === val));
             }}
-            onEnter={() => {
-              setStep('status');
-              setTimeout(() => statusSelectRef.current?.focus(), 50);
-            }}
+            onEnter={goToNextStep}
             onEscape={resetForm}
+            onLeft={() => {}} // Can't go back from type
+            onRight={() => goToStep('status')}
             getColor={getTypeColor}
             displayKey="name"
             valueKey="name"
@@ -1457,7 +1470,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
         )}
 
         {/* Status Selection */}
-        {(step === 'status' || step === 'poc' || step === 'project') && selectedStatus && (
+        {isPastTask && (
           <KeyboardSelect
             ref={statusSelectRef}
             value={selectedStatus}
@@ -1466,11 +1479,10 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
               setSelectedStatus(val);
               setStatusIndex(statuses.findIndex(s => s.name === val));
             }}
-            onEnter={() => {
-              setStep('poc');
-              setTimeout(() => pocSelectRef.current?.focus(), 50);
-            }}
+            onEnter={goToNextStep}
             onEscape={resetForm}
+            onLeft={() => goToStep('type')}
+            onRight={() => goToStep('dueDate')}
             getColor={getStatusColor}
             displayKey="name"
             valueKey="value"
@@ -1478,8 +1490,43 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
           />
         )}
 
+        {/* Due Date Selection */}
+        {isPastTask && (
+          <div className="relative">
+            <button
+              ref={dueDateRef}
+              type="button"
+              onClick={() => setShowDueDatePicker(!showDueDatePicker)}
+              onKeyDown={handleDueDateKeyDown}
+              className={`px-4 py-3 rounded-lg border outline-none text-sm font-medium min-w-[100px] transition-all text-center ${
+                step === 'dueDate'
+                  ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
+                  : 'border-gray-200 bg-[#F9F9F9]'
+              }`}
+            >
+              {customDueDate 
+                ? formatDateToDDMMM(customDueDate)
+                : `${dueInDays} days`
+              }
+            </button>
+            {showDueDatePicker && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
+                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
+                  <input
+                    type="date"
+                    onChange={handleDatePickerChange}
+                    className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
+                    autoFocus
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* POC Selection */}
-        {(step === 'poc' || step === 'project') && (
+        {isPastTask && (
           <KeyboardSelect
             ref={pocSelectRef}
             value={selectedPOC[0] || ''}
@@ -1495,28 +1542,12 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
             }}
             onEnter={createTask}
             onEscape={resetForm}
+            onLeft={() => goToStep('dueDate')}
+            onRight={() => {}} // Can't go forward from POC, Enter creates task
             displayKey="name"
             valueKey="value"
             isActive={step === 'poc'}
             placeholder="- (Unassigned)"
-          />
-        )}
-
-        {/* Project Selection */}
-        {step === 'project' && (
-          <KeyboardSelect
-            ref={projectSelectRef}
-            value={selectedProject || ''}
-            options={projectOptions.map(p => ({ name: p.name, value: p.id || '' }))}
-            onValueChange={(val) => {
-              setSelectedProject(val || null);
-              setProjectIndex(projectOptions.findIndex(p => (p.id || '') === val));
-            }}
-            onEnter={createTask}
-            onEscape={resetForm}
-            displayKey="name"
-            valueKey="value"
-            isActive={step === 'project'}
           />
         )}
 
@@ -1528,28 +1559,22 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
               Type task name, press Enter
             </span>
           )}
-          {step === 'type' && (
+          {(step === 'type' || step === 'status') && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ← → to change, Enter to continue
+              ↑↓ to change, ←→ to navigate, Enter to continue
             </span>
           )}
-          {step === 'status' && (
+          {step === 'dueDate' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ← → to change, Enter to continue
+              ↑↓ to change days, click for calendar, Enter to continue
             </span>
           )}
           {step === 'poc' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Enter to create (General Tasks), Tab to change project
-            </span>
-          )}
-          {step === 'project' && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ← → to change, Enter to continue to create
+              ↑↓ to change, ← to go back, Enter to create
             </span>
           )}
         </div>
@@ -1560,10 +1585,14 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
 
 // Project Inline Task Creator Component (without project selection)
 function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, getTypeColor, onAdd, selectedProjectId, defaultPersonId }) {
-  const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'poc'
+  // Steps: task → type → status → dueDate → poc → create
+  const [step, setStep] = useState('task');
   const [taskName, setTaskName] = useState('');
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
+  const [dueInDays, setDueInDays] = useState(7);
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false);
+  const [customDueDate, setCustomDueDate] = useState(null);
   const [selectedPOC, setSelectedPOC] = useState(defaultPersonId ? [defaultPersonId] : []);
   const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
@@ -1572,90 +1601,87 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   const taskInputRef = useRef(null);
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
+  const dueDateRef = useRef(null);
   const pocSelectRef = useRef(null);
+
+  // Navigation helpers
+  const stepOrder = ['type', 'status', 'dueDate', 'poc'];
   
-  // Track if we're handling a keyboard event (to prevent Edge from double-firing onChange)
-  const isKeyboardNavRef = useRef(false);
+  const goToStep = (newStep) => {
+    setStep(newStep);
+    setTimeout(() => {
+      if (newStep === 'type') typeSelectRef.current?.focus();
+      else if (newStep === 'status') statusSelectRef.current?.focus();
+      else if (newStep === 'dueDate') dueDateRef.current?.focus();
+      else if (newStep === 'poc') pocSelectRef.current?.focus();
+    }, 50);
+  };
+
+  const goToNextStep = () => {
+    const currentIdx = stepOrder.indexOf(step);
+    if (currentIdx < stepOrder.length - 1) {
+      goToStep(stepOrder[currentIdx + 1]);
+    } else {
+      createTask();
+    }
+  };
 
   const handleTaskKeyDown = (e) => {
     if (e.key === 'Enter' && taskName.trim()) {
-      setStep('type');
-      setTimeout(() => typeSelectRef.current?.focus(), 50);
+      goToStep('type');
     }
   };
 
-  const handleTypeKeyDown = (e) => {
-    isKeyboardNavRef.current = true;
+  const handleDueDateKeyDown = (e) => {
     e.preventDefault();
     e.stopPropagation();
     
     if (e.key === 'ArrowUp') {
-      const newIndex = Math.max(0, typeIndex - 1);
-      setTypeIndex(newIndex);
-      setSelectedType(types[newIndex]);
+      setDueInDays(prev => prev + 1);
+      setCustomDueDate(null);
     } else if (e.key === 'ArrowDown') {
-      const newIndex = Math.min(types.length - 1, typeIndex + 1);
-      setTypeIndex(newIndex);
-      setSelectedType(types[newIndex]);
+      setDueInDays(prev => Math.max(0, prev - 1));
+      setCustomDueDate(null);
+    } else if (e.key === 'ArrowLeft') {
+      goToStep('status');
+    } else if (e.key === 'ArrowRight') {
+      goToStep('poc');
     } else if (e.key === 'Enter') {
-      setStep('status');
-      setTimeout(() => statusSelectRef.current?.focus(), 50);
+      goToNextStep();
     } else if (e.key === 'Escape') {
       resetForm();
     }
   };
 
-  const handleStatusKeyDown = (e) => {
-    isKeyboardNavRef.current = true;
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.key === 'ArrowUp') {
-      const newIndex = Math.max(0, statusIndex - 1);
-      setStatusIndex(newIndex);
-      setSelectedStatus(statuses[newIndex].name);
-    } else if (e.key === 'ArrowDown') {
-      const newIndex = Math.min(statuses.length - 1, statusIndex + 1);
-      setStatusIndex(newIndex);
-      setSelectedStatus(statuses[newIndex].name);
-    } else if (e.key === 'Enter') {
-      setStep('poc');
-      setTimeout(() => pocSelectRef.current?.focus(), 50);
-    } else if (e.key === 'Escape') {
-      resetForm();
+  const handleDatePickerChange = (e) => {
+    const dateValue = e.target.value;
+    if (dateValue) {
+      const selectedDate = new Date(dateValue);
+      setCustomDueDate(selectedDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      selectedDate.setHours(0, 0, 0, 0);
+      const diffTime = selectedDate - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      setDueInDays(Math.max(0, diffDays));
     }
-  };
-
-  const handlePOCKeyDown = (e) => {
-    isKeyboardNavRef.current = true;
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.key === 'ArrowUp') {
-      const newIndex = Math.max(-1, pocIndex - 1);
-      setPocIndex(newIndex);
-      setSelectedPOC(newIndex === -1 ? [] : [(persons || [])[newIndex]?.id].filter(Boolean));
-    } else if (e.key === 'ArrowDown') {
-      const newIndex = Math.min((persons || []).length - 1, pocIndex + 1);
-      setPocIndex(newIndex);
-      setSelectedPOC(newIndex === -1 ? [] : [(persons || [])[newIndex]?.id].filter(Boolean));
-    } else if (e.key === 'Enter') {
-      createTask();
-    } else if (e.key === 'Escape') {
-      resetForm();
-    }
+    setShowDueDatePicker(false);
   };
 
   const createTask = () => {
     if (!taskName.trim()) return;
 
-    // Set due date to 1 week from today
-    const oneWeekLater = addWorkingDays(new Date(), 7);
-    const dueDate = formatDateToDDMMM(oneWeekLater);
+    let dueDate;
+    if (customDueDate) {
+      dueDate = formatDateToDDMMM(customDueDate);
+    } else {
+      const dueDateObj = addWorkingDays(new Date(), dueInDays);
+      dueDate = formatDateToDDMMM(dueDateObj);
+    }
 
     const newTask = {
       name: taskName.trim(),
-      projectId: selectedProjectId, // Auto-assign to current project
+      projectId: selectedProjectId,
       type: selectedType,
       status: selectedStatus,
       dueDate: dueDate,
@@ -1671,6 +1697,9 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
     setTaskName('');
     setSelectedType('Regular');
     setSelectedStatus('My action');
+    setDueInDays(7);
+    setCustomDueDate(null);
+    setShowDueDatePicker(false);
     setSelectedPOC(defaultPersonId ? [defaultPersonId] : []);
     setTypeIndex(types.findIndex(t => t.name === 'Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
@@ -1678,47 +1707,12 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
     setTimeout(() => taskInputRef.current?.focus(), 50);
   };
 
-  const handleTypeSelect = (type) => {
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedType(type);
-    setTypeIndex(types.findIndex(t => t.name === type));
-    setStep('status');
-    setTimeout(() => statusSelectRef.current?.focus(), 50);
-  };
-
-  const handleStatusSelect = (statusName) => {
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedStatus(statusName);
-    setStatusIndex(statuses.findIndex(s => s.name === statusName));
-    setStep('poc');
-    setTimeout(() => pocSelectRef.current?.focus(), 50);
-  };
-
-  const handlePOCSelect = (personId) => {
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    if (personId === null || personId === '') {
-      setSelectedPOC([]);
-      setPocIndex(-1);
-    } else {
-      setSelectedPOC([parseInt(personId)]);
-      setPocIndex((persons || []).findIndex(p => p.id === parseInt(personId)));
-    }
-    createTask();
-  };
+  const isPastTask = step !== 'task';
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
       <div className="flex items-center gap-3 flex-wrap">
-        {/* Task Name Input - Takes more space */}
+        {/* Task Name Input */}
         <input
           ref={taskInputRef}
           type="text"
@@ -1735,7 +1729,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
         />
 
         {/* Type Selection */}
-        {(step === 'type' || step === 'status' || step === 'poc') && (
+        {isPastTask && (
           <KeyboardSelect
             ref={typeSelectRef}
             value={selectedType}
@@ -1744,11 +1738,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
               setSelectedType(val);
               setTypeIndex(types.findIndex(t => t.name === val));
             }}
-            onEnter={() => {
-              setStep('status');
-              setTimeout(() => statusSelectRef.current?.focus(), 50);
-            }}
+            onEnter={goToNextStep}
             onEscape={resetForm}
+            onLeft={() => {}}
+            onRight={() => goToStep('status')}
             getColor={getTypeColor}
             displayKey="name"
             valueKey="name"
@@ -1757,7 +1750,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
         )}
 
         {/* Status Selection */}
-        {(step === 'status' || step === 'poc') && (
+        {isPastTask && (
           <KeyboardSelect
             ref={statusSelectRef}
             value={selectedStatus}
@@ -1766,11 +1759,10 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
               setSelectedStatus(val);
               setStatusIndex(statuses.findIndex(s => s.name === val));
             }}
-            onEnter={() => {
-              setStep('poc');
-              setTimeout(() => pocSelectRef.current?.focus(), 50);
-            }}
+            onEnter={goToNextStep}
             onEscape={resetForm}
+            onLeft={() => goToStep('type')}
+            onRight={() => goToStep('dueDate')}
             getColor={getStatusColor}
             displayKey="name"
             valueKey="value"
@@ -1778,8 +1770,43 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
           />
         )}
 
+        {/* Due Date Selection */}
+        {isPastTask && (
+          <div className="relative">
+            <button
+              ref={dueDateRef}
+              type="button"
+              onClick={() => setShowDueDatePicker(!showDueDatePicker)}
+              onKeyDown={handleDueDateKeyDown}
+              className={`px-4 py-3 rounded-lg border outline-none text-sm font-medium min-w-[100px] transition-all text-center ${
+                step === 'dueDate'
+                  ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
+                  : 'border-gray-200 bg-[#F9F9F9]'
+              }`}
+            >
+              {customDueDate 
+                ? formatDateToDDMMM(customDueDate)
+                : `${dueInDays} days`
+              }
+            </button>
+            {showDueDatePicker && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
+                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
+                  <input
+                    type="date"
+                    onChange={handleDatePickerChange}
+                    className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
+                    autoFocus
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* POC Selection */}
-        {step === 'poc' && (
+        {isPastTask && (
           <KeyboardSelect
             ref={pocSelectRef}
             value={selectedPOC[0] || ''}
@@ -1795,6 +1822,8 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
             }}
             onEnter={createTask}
             onEscape={resetForm}
+            onLeft={() => goToStep('dueDate')}
+            onRight={() => {}}
             displayKey="name"
             valueKey="value"
             isActive={step === 'poc'}
@@ -1810,22 +1839,22 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
               Type task name, press Enter
             </span>
           )}
-          {step === 'type' && (
+          {(step === 'type' || step === 'status') && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ← → to change, Enter to continue
+              ↑↓ to change, ←→ to navigate, Enter to continue
             </span>
           )}
-          {step === 'status' && (
+          {step === 'dueDate' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ← → to change, Enter to continue
+              ↑↓ to change days, click for calendar, Enter to continue
             </span>
           )}
           {step === 'poc' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Select POC, press Enter to create
+              ↑↓ to change, ← to go back, Enter to create
             </span>
           )}
         </div>
@@ -1836,10 +1865,14 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
 
 // Person Task Creator (for Person View - pre-assigns to a specific person)
 function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor, getTypeColor, onAdd, defaultPersonId, personName }) {
-  const [step, setStep] = useState('task'); // 'task', 'type', 'status', 'project'
+  // Steps: task → type → status → dueDate → project → create
+  const [step, setStep] = useState('task');
   const [taskName, setTaskName] = useState('');
   const [selectedType, setSelectedType] = useState('Regular');
   const [selectedStatus, setSelectedStatus] = useState('My action');
+  const [dueInDays, setDueInDays] = useState(7);
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false);
+  const [customDueDate, setCustomDueDate] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
   const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
@@ -1848,10 +1881,8 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const taskInputRef = useRef(null);
   const typeSelectRef = useRef(null);
   const statusSelectRef = useRef(null);
+  const dueDateRef = useRef(null);
   const projectSelectRef = useRef(null);
-  
-  // Track if we're handling a keyboard event (to prevent Edge from double-firing onChange)
-  const isKeyboardNavRef = useRef(false);
 
   // Calculate default project ID (General Tasks or first project)
   const generalTasksProject = projects.find(p => p.name === 'General Tasks');
@@ -1865,92 +1896,90 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
     }
   }, [defaultProjectId, projects]);
 
-  const projectOptions = [...projects]; // Always require a project
+  const projectOptions = [...projects];
+
+  // Navigation helpers
+  const stepOrder = ['type', 'status', 'dueDate', 'project'];
+  
+  const goToStep = (newStep) => {
+    setStep(newStep);
+    setTimeout(() => {
+      if (newStep === 'type') typeSelectRef.current?.focus();
+      else if (newStep === 'status') statusSelectRef.current?.focus();
+      else if (newStep === 'dueDate') dueDateRef.current?.focus();
+      else if (newStep === 'project') projectSelectRef.current?.focus();
+    }, 50);
+  };
+
+  const goToNextStep = () => {
+    const currentIdx = stepOrder.indexOf(step);
+    if (currentIdx < stepOrder.length - 1) {
+      goToStep(stepOrder[currentIdx + 1]);
+    } else {
+      createTask();
+    }
+  };
 
   const handleTaskKeyDown = (e) => {
     if (e.key === 'Enter' && taskName.trim()) {
-      setStep('type');
-      setTimeout(() => typeSelectRef.current?.focus(), 50);
+      goToStep('type');
     }
   };
 
-  const handleTypeKeyDown = (e) => {
-    isKeyboardNavRef.current = true;
+  const handleDueDateKeyDown = (e) => {
     e.preventDefault();
     e.stopPropagation();
     
     if (e.key === 'ArrowUp') {
-      const newIndex = Math.max(0, typeIndex - 1);
-      setTypeIndex(newIndex);
-      setSelectedType(types[newIndex]);
+      setDueInDays(prev => prev + 1);
+      setCustomDueDate(null);
     } else if (e.key === 'ArrowDown') {
-      const newIndex = Math.min(types.length - 1, typeIndex + 1);
-      setTypeIndex(newIndex);
-      setSelectedType(types[newIndex]);
+      setDueInDays(prev => Math.max(0, prev - 1));
+      setCustomDueDate(null);
+    } else if (e.key === 'ArrowLeft') {
+      goToStep('status');
+    } else if (e.key === 'ArrowRight') {
+      goToStep('project');
     } else if (e.key === 'Enter') {
-      setStep('status');
-      setTimeout(() => statusSelectRef.current?.focus(), 50);
+      goToNextStep();
     } else if (e.key === 'Escape') {
       resetForm();
     }
   };
 
-  const handleStatusKeyDown = (e) => {
-    isKeyboardNavRef.current = true;
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.key === 'ArrowUp') {
-      const newIndex = Math.max(0, statusIndex - 1);
-      setStatusIndex(newIndex);
-      setSelectedStatus(statuses[newIndex].name);
-    } else if (e.key === 'ArrowDown') {
-      const newIndex = Math.min(statuses.length - 1, statusIndex + 1);
-      setStatusIndex(newIndex);
-      setSelectedStatus(statuses[newIndex].name);
-    } else if (e.key === 'Enter') {
-      setStep('project');
-      setTimeout(() => projectSelectRef.current?.focus(), 50);
-    } else if (e.key === 'Escape') {
-      resetForm();
+  const handleDatePickerChange = (e) => {
+    const dateValue = e.target.value;
+    if (dateValue) {
+      const selectedDate = new Date(dateValue);
+      setCustomDueDate(selectedDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      selectedDate.setHours(0, 0, 0, 0);
+      const diffTime = selectedDate - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      setDueInDays(Math.max(0, diffDays));
     }
-  };
-
-  const handleProjectKeyDown = (e) => {
-    isKeyboardNavRef.current = true;
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.key === 'ArrowUp') {
-      const newIndex = Math.max(0, projectIndex - 1);
-      setProjectIndex(newIndex);
-      setSelectedProject(projectOptions[newIndex].id);
-    } else if (e.key === 'ArrowDown') {
-      const newIndex = Math.min(projectOptions.length - 1, projectIndex + 1);
-      setProjectIndex(newIndex);
-      setSelectedProject(projectOptions[newIndex].id);
-    } else if (e.key === 'Enter') {
-      createTask();
-    } else if (e.key === 'Escape') {
-      resetForm();
-    }
+    setShowDueDatePicker(false);
   };
 
   const createTask = () => {
     if (!taskName.trim()) return;
 
-    // Use selectedProject, or fall back to defaultProjectId
     const projectId = selectedProject || defaultProjectId;
     
-    // Don't create task without a valid project
     if (!projectId) {
       console.error('Cannot create task: no project available');
       alert('Please wait for projects to load, or select a project.');
       return;
     }
 
-    const oneWeekLater = addWorkingDays(new Date(), 7);
-    const dueDate = formatDateToDDMMM(oneWeekLater);
+    let dueDate;
+    if (customDueDate) {
+      dueDate = formatDateToDDMMM(customDueDate);
+    } else {
+      const dueDateObj = addWorkingDays(new Date(), dueInDays);
+      dueDate = formatDateToDDMMM(dueDateObj);
+    }
 
     const newTask = {
       name: taskName.trim(),
@@ -1961,7 +1990,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
       personIds: defaultPersonId ? [defaultPersonId] : []
     };
 
-    console.log('PersonTaskCreator creating task:', newTask); // Debug log
+    console.log('PersonTaskCreator creating task:', newTask);
     onAdd(newTask);
     resetForm();
   };
@@ -1971,7 +2000,9 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setTaskName('');
     setSelectedType('Regular');
     setSelectedStatus('My action');
-    // Reset to default project
+    setDueInDays(7);
+    setCustomDueDate(null);
+    setShowDueDatePicker(false);
     const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
     setSelectedProject(resetProjectId);
     setTypeIndex(types.findIndex(t => t.name === 'Regular'));
@@ -1979,37 +2010,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setProjectIndex(resetProjectId ? projects.findIndex(p => p.id === resetProjectId) : -1);
   };
 
-  const handleTypeSelect = (type) => {
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedType(type);
-    setTypeIndex(types.findIndex(t => t.name === type));
-    setStep('status');
-    setTimeout(() => statusSelectRef.current?.focus(), 50);
-  };
-
-  const handleStatusSelect = (statusName) => {
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedStatus(statusName);
-    setStatusIndex(statuses.findIndex(s => s.name === statusName));
-    setStep('project');
-    setTimeout(() => projectSelectRef.current?.focus(), 50);
-  };
-
-  const handleProjectSelect = (projectId) => {
-    if (isKeyboardNavRef.current) {
-      isKeyboardNavRef.current = false;
-      return;
-    }
-    setSelectedProject(projectId);
-    setProjectIndex(projectOptions.findIndex(p => p.id === projectId));
-    createTask();
-  };
+  const isPastTask = step !== 'task';
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -2027,7 +2028,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
         }`}
       />
 
-      {(step === 'type' || step === 'status' || step === 'project') && (
+      {isPastTask && (
         <KeyboardSelect
           ref={typeSelectRef}
           value={selectedType}
@@ -2036,11 +2037,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
             setSelectedType(val);
             setTypeIndex(types.findIndex(t => t.name === val));
           }}
-          onEnter={() => {
-            setStep('status');
-            setTimeout(() => statusSelectRef.current?.focus(), 50);
-          }}
+          onEnter={goToNextStep}
           onEscape={resetForm}
+          onLeft={() => {}}
+          onRight={() => goToStep('status')}
           getColor={getTypeColor}
           displayKey="name"
           valueKey="name"
@@ -2049,7 +2049,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
         />
       )}
 
-      {(step === 'status' || step === 'project') && (
+      {isPastTask && (
         <KeyboardSelect
           ref={statusSelectRef}
           value={selectedStatus}
@@ -2058,11 +2058,10 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
             setSelectedStatus(val);
             setStatusIndex(statuses.findIndex(s => s.name === val));
           }}
-          onEnter={() => {
-            setStep('project');
-            setTimeout(() => projectSelectRef.current?.focus(), 50);
-          }}
+          onEnter={goToNextStep}
           onEscape={resetForm}
+          onLeft={() => goToStep('type')}
+          onRight={() => goToStep('dueDate')}
           getColor={getStatusColor}
           displayKey="name"
           valueKey="value"
@@ -2071,7 +2070,42 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
         />
       )}
 
-      {step === 'project' && (
+      {/* Due Date Selection */}
+      {isPastTask && (
+        <div className="relative">
+          <button
+            ref={dueDateRef}
+            type="button"
+            onClick={() => setShowDueDatePicker(!showDueDatePicker)}
+            onKeyDown={handleDueDateKeyDown}
+            className={`px-3 py-2 rounded-lg border outline-none text-sm font-medium min-w-[80px] transition-all text-center ${
+              step === 'dueDate'
+                ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
+                : 'border-gray-200 bg-[#F9F9F9]'
+            }`}
+          >
+            {customDueDate 
+              ? formatDateToDDMMM(customDueDate)
+              : `${dueInDays}d`
+            }
+          </button>
+          {showDueDatePicker && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
+              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
+                <input
+                  type="date"
+                  onChange={handleDatePickerChange}
+                  className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
+                  autoFocus
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {isPastTask && (
         <KeyboardSelect
           ref={projectSelectRef}
           value={selectedProject || ''}
@@ -2082,6 +2116,8 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
           }}
           onEnter={createTask}
           onEscape={resetForm}
+          onLeft={() => goToStep('dueDate')}
+          onRight={() => {}}
           displayKey="name"
           valueKey="value"
           isActive={step === 'project'}
@@ -2091,9 +2127,9 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
 
       <span className="text-xs text-gray-400">
         {step === 'task' && 'Enter to continue'}
-        {step === 'type' && '←→ Enter'}
-        {step === 'status' && '←→ Enter'}
-        {step === 'project' && '←→ Enter to create'}
+        {(step === 'type' || step === 'status') && '↑↓ change, ←→ navigate'}
+        {step === 'dueDate' && '↑↓ days, click for cal'}
+        {step === 'project' && '↑↓ change, Enter to create'}
       </span>
     </div>
   );
