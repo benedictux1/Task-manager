@@ -24,6 +24,7 @@ model Task {
   name        String
   type        String    @default("Regular")
   status      String    @default("My action")
+  startDate   String    @default("")  // Optional; when set, Gantt shows bar from start to due
   dueDate     String    @default("")
   notes       String    @default("")
   completedAt DateTime? // Timestamp when task was marked as Done

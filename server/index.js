@@ -187,13 +187,14 @@ app.get('/api/tasks/by-person', async (req, res) => {
 // Create task
 app.post('/api/tasks', async (req, res) => {
   try {
-    const { name, projectId, type, status, dueDate, notes, personIds } = req.body;
+    const { name, projectId, type, status, startDate, dueDate, notes, personIds } = req.body;
     const task = await prisma.task.create({
       data: {
         name,
         projectId: parseInt(projectId),
         type: type || 'Regular',
         status: status || 'My action',
+        startDate: startDate ?? '',
         dueDate: dueDate || '',
         notes: notes || '',
         // Create person relationships if provided
@@ -219,13 +220,14 @@ app.post('/api/tasks', async (req, res) => {
 // Update task
 app.put('/api/tasks/:id', async (req, res) => {
   try {
-    const { name, projectId, type, status, dueDate, notes, personIds } = req.body;
+    const { name, projectId, type, status, startDate, dueDate, notes, personIds } = req.body;
     const taskId = parseInt(req.params.id);
     const updateData = {};
     
     if (name !== undefined) updateData.name = name;
     if (projectId !== undefined) updateData.projectId = parseInt(projectId);
     if (type !== undefined) updateData.type = type;
+    if (startDate !== undefined) updateData.startDate = startDate;
     if (dueDate !== undefined) updateData.dueDate = dueDate;
     if (notes !== undefined) updateData.notes = notes;
     

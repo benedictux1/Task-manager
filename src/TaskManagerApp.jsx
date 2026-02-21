@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2, User, Users, ChevronsUp, ChevronsDown, GripVertical } from 'lucide-react';
+import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2, User, Users, ChevronsUp, ChevronsDown, GripVertical, BarChart3 } from 'lucide-react';
 import { getWorkingDaysUntilDue, formatDateToDDMMM, parseDueDate, addWorkingDays } from './utils/dateUtils';
 import { projectsAPI, tasksAPI, settingsAPI, personsAPI } from './api';
 
@@ -97,6 +97,8 @@ export default function TaskManagerApp() {
   const [currentView, setCurrentView] = useState('task');
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  // Gantt scope: null = all projects, number[] = selected project IDs (multi-select)
+  const [ganttScopeProjectIds, setGanttScopeProjectIds] = useState(null);
   
   // Loading and error states
   const [isLoading, setIsLoading] = useState(true);
@@ -304,6 +306,7 @@ export default function TaskManagerApp() {
         projectId: projectId,
         type: 'Regular',
         status: 'My action',
+        startDate: '',
         dueDate: newTaskDueDate,
         notes: ''
       });
@@ -435,6 +438,17 @@ export default function TaskManagerApp() {
               Calendar
             </button>
             <button
+              onClick={() => setCurrentView('gantt')}
+              className={`px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors flex items-center gap-1 ${
+                currentView === 'gantt'
+                  ? 'bg-white text-[#0066CC] shadow-sm'
+                  : 'text-gray-600 hover:text-[#1D1D1F]'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden sm:inline">Gantt</span>
+            </button>
+            <button
               onClick={() => setCurrentView('person')}
               className={`px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors ${
                 currentView === 'person'
@@ -480,6 +494,10 @@ export default function TaskManagerApp() {
           setNewTaskInput={setNewTaskInput}
           newTaskDueDate={newTaskDueDate}
           setNewTaskDueDate={setNewTaskDueDate}
+          onViewTimeline={() => {
+            setCurrentView('gantt');
+            if (selectedProjectId) setGanttScopeProjectIds([selectedProjectId]);
+          }}
         />
       ) : currentView === 'task' ? (
         <TaskView
@@ -512,6 +530,20 @@ export default function TaskManagerApp() {
           toggleTaskDone={toggleTaskDone}
           deleteTask={deleteTask}
           goToProject={goToProject}
+        />
+      ) : currentView === 'gantt' ? (
+        <GanttView
+          projects={projects}
+          tasks={tasks}
+          types={types}
+          statuses={statuses}
+          persons={persons}
+          getStatusColor={getStatusColor}
+          getTypeColor={getTypeColor}
+          getPersonName={getPersonName}
+          goToProject={goToProject}
+          ganttScopeProjectIds={ganttScopeProjectIds}
+          setGanttScopeProjectIds={setGanttScopeProjectIds}
         />
       ) : (
         <PersonView
@@ -551,7 +583,7 @@ export default function TaskManagerApp() {
 function ProjectView({
   projects, selectedProjectId, setSelectedProjectId, addProject, updateProject, deleteProject,
   tasks, types, statuses, persons, getStatusColor, getTypeColor, getPersonColor, getPersonName, addTask, addTaskAdvanced, updateTask, toggleTaskDone, deleteTask,
-  newTaskInput, setNewTaskInput, newTaskDueDate, setNewTaskDueDate
+  newTaskInput, setNewTaskInput, newTaskDueDate, setNewTaskDueDate, onViewTimeline
 }) {
   const [notesExpanded, setNotesExpanded] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(false);
@@ -652,13 +684,25 @@ function ProjectView({
 
       <main className="flex-1 overflow-y-auto p-8">
         <div className="mx-4">
-          <input
-            type="text"
-            value={selectedProject?.name || ''}
-            onChange={(e) => updateProject(selectedProjectId, 'name', e.target.value)}
-            className="text-4xl font-bold text-[#1D1D1F] bg-transparent border-none outline-none w-full mb-8 focus:ring-0"
-            placeholder="Project Name"
-          />
+          <div className="flex items-center gap-3 flex-wrap mb-8">
+            <input
+              type="text"
+              value={selectedProject?.name || ''}
+              onChange={(e) => updateProject(selectedProjectId, 'name', e.target.value)}
+              className="text-4xl font-bold text-[#1D1D1F] bg-transparent border-none outline-none flex-1 min-w-[200px] focus:ring-0"
+              placeholder="Project Name"
+            />
+            {onViewTimeline && (
+              <button
+                type="button"
+                onClick={onViewTimeline}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-[#F5F5F7] text-[#1D1D1F] hover:bg-[#E8E8ED] border border-gray-200"
+              >
+                <BarChart3 className="w-4 h-4" />
+                View timeline
+              </button>
+            )}
+          </div>
 
           <div className="mb-8">
             <h3 className="text-xl font-semibold text-[#1D1D1F] mb-4">Tasks</h3>
@@ -1203,6 +1247,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const [dueInDays, setDueInDays] = useState(7); // Default 7 working days
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
   const [customDueDate, setCustomDueDate] = useState(null); // For calendar picker
+  const [optionalStartDays, setOptionalStartDays] = useState(null); // null = no start (milestone), number = start in N working days
   const [selectedPOC, setSelectedPOC] = useState([]); // Array of person IDs
   const [selectedProject, setSelectedProject] = useState(null);
   const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
@@ -1394,11 +1439,17 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
       dueDate = formatDateToDDMMM(dueDateObj);
     }
 
+    // Optional start date (for Gantt bar; null = milestone only)
+    const startDate = optionalStartDays != null
+      ? formatDateToDDMMM(addWorkingDays(new Date(), optionalStartDays))
+      : '';
+
     const newTask = {
       name: taskName.trim(),
       projectId: projectId,
       type: selectedType,
       status: selectedStatus,
+      startDate,
       dueDate: dueDate,
       personIds: selectedPOC.filter(id => id !== null)
     };
@@ -1416,6 +1467,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setDueInDays(7);
     setCustomDueDate(null);
     setShowDueDatePicker(false);
+    setOptionalStartDays(null);
     setSelectedPOC([]);
     const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
     setSelectedProject(resetProjectId);
@@ -1492,35 +1544,50 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
 
         {/* Due Date Selection */}
         {isPastTask && (
-          <div className="relative">
-            <button
-              ref={dueDateRef}
-              type="button"
-              onClick={() => setShowDueDatePicker(!showDueDatePicker)}
-              onKeyDown={handleDueDateKeyDown}
-              className={`px-4 py-3 rounded-lg border outline-none text-sm font-medium min-w-[100px] transition-all text-center ${
-                step === 'dueDate'
-                  ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
-                  : 'border-gray-200 bg-[#F9F9F9]'
-              }`}
-            >
-              {customDueDate 
-                ? formatDateToDDMMM(customDueDate)
-                : `${dueInDays} days`
-              }
-            </button>
-            {showDueDatePicker && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
-                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
-                  <input
-                    type="date"
-                    onChange={handleDatePickerChange}
-                    className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
-                    autoFocus
-                  />
-                </div>
-              </>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <button
+                ref={dueDateRef}
+                type="button"
+                onClick={() => setShowDueDatePicker(!showDueDatePicker)}
+                onKeyDown={handleDueDateKeyDown}
+                className={`px-4 py-3 rounded-lg border outline-none text-sm font-medium min-w-[100px] transition-all text-center ${
+                  step === 'dueDate'
+                    ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
+                    : 'border-gray-200 bg-[#F9F9F9]'
+                }`}
+              >
+                {customDueDate 
+                  ? formatDateToDDMMM(customDueDate)
+                  : `${dueInDays} days`
+                }
+              </button>
+              {showDueDatePicker && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
+                    <input
+                      type="date"
+                      onChange={handleDatePickerChange}
+                      className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
+                      autoFocus
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            {step === 'dueDate' && (
+              <select
+                value={optionalStartDays === null ? '' : optionalStartDays}
+                onChange={(e) => setOptionalStartDays(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+                className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-[#F9F9F9] outline-none focus:ring-2 focus:ring-[#0066CC]"
+                title="Start (optional) for Gantt bar"
+              >
+                <option value="">Start: none</option>
+                {[0, 1, 2, 3, 5, 7, 10, 14].map((d) => (
+                  <option key={d} value={d}>Start: {d}d</option>
+                ))}
+              </select>
             )}
           </div>
         )}
@@ -1593,6 +1660,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   const [dueInDays, setDueInDays] = useState(7);
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
   const [customDueDate, setCustomDueDate] = useState(null);
+  const [optionalStartDays, setOptionalStartDays] = useState(null);
   const [selectedPOC, setSelectedPOC] = useState(defaultPersonId ? [defaultPersonId] : []);
   const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
@@ -1679,11 +1747,16 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
       dueDate = formatDateToDDMMM(dueDateObj);
     }
 
+    const startDate = optionalStartDays != null
+      ? formatDateToDDMMM(addWorkingDays(new Date(), optionalStartDays))
+      : '';
+
     const newTask = {
       name: taskName.trim(),
       projectId: selectedProjectId,
       type: selectedType,
       status: selectedStatus,
+      startDate,
       dueDate: dueDate,
       personIds: selectedPOC.filter(id => id !== null)
     };
@@ -1700,6 +1773,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
     setDueInDays(7);
     setCustomDueDate(null);
     setShowDueDatePicker(false);
+    setOptionalStartDays(null);
     setSelectedPOC(defaultPersonId ? [defaultPersonId] : []);
     setTypeIndex(types.findIndex(t => t.name === 'Regular'));
     setStatusIndex(statuses.findIndex(s => s.name === 'My action'));
@@ -1772,35 +1846,50 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
 
         {/* Due Date Selection */}
         {isPastTask && (
-          <div className="relative">
-            <button
-              ref={dueDateRef}
-              type="button"
-              onClick={() => setShowDueDatePicker(!showDueDatePicker)}
-              onKeyDown={handleDueDateKeyDown}
-              className={`px-4 py-3 rounded-lg border outline-none text-sm font-medium min-w-[100px] transition-all text-center ${
-                step === 'dueDate'
-                  ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
-                  : 'border-gray-200 bg-[#F9F9F9]'
-              }`}
-            >
-              {customDueDate 
-                ? formatDateToDDMMM(customDueDate)
-                : `${dueInDays} days`
-              }
-            </button>
-            {showDueDatePicker && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
-                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
-                  <input
-                    type="date"
-                    onChange={handleDatePickerChange}
-                    className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
-                    autoFocus
-                  />
-                </div>
-              </>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <button
+                ref={dueDateRef}
+                type="button"
+                onClick={() => setShowDueDatePicker(!showDueDatePicker)}
+                onKeyDown={handleDueDateKeyDown}
+                className={`px-4 py-3 rounded-lg border outline-none text-sm font-medium min-w-[100px] transition-all text-center ${
+                  step === 'dueDate'
+                    ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
+                    : 'border-gray-200 bg-[#F9F9F9]'
+                }`}
+              >
+                {customDueDate 
+                  ? formatDateToDDMMM(customDueDate)
+                  : `${dueInDays} days`
+                }
+              </button>
+              {showDueDatePicker && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
+                    <input
+                      type="date"
+                      onChange={handleDatePickerChange}
+                      className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
+                      autoFocus
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            {step === 'dueDate' && (
+              <select
+                value={optionalStartDays === null ? '' : optionalStartDays}
+                onChange={(e) => setOptionalStartDays(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+                className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-[#F9F9F9] outline-none focus:ring-2 focus:ring-[#0066CC]"
+                title="Start (optional) for Gantt bar"
+              >
+                <option value="">Start: none</option>
+                {[0, 1, 2, 3, 5, 7, 10, 14].map((d) => (
+                  <option key={d} value={d}>Start: {d}d</option>
+                ))}
+              </select>
             )}
           </div>
         )}
@@ -1873,6 +1962,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
   const [dueInDays, setDueInDays] = useState(7);
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
   const [customDueDate, setCustomDueDate] = useState(null);
+  const [optionalStartDays, setOptionalStartDays] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
   const [typeIndex, setTypeIndex] = useState(types.findIndex(t => t.name === 'Regular'));
   const [statusIndex, setStatusIndex] = useState(statuses.findIndex(s => s.name === 'My action'));
@@ -1981,11 +2071,16 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
       dueDate = formatDateToDDMMM(dueDateObj);
     }
 
+    const startDate = optionalStartDays != null
+      ? formatDateToDDMMM(addWorkingDays(new Date(), optionalStartDays))
+      : '';
+
     const newTask = {
       name: taskName.trim(),
       projectId: projectId,
       type: selectedType,
       status: selectedStatus,
+      startDate,
       dueDate: dueDate,
       personIds: defaultPersonId ? [defaultPersonId] : []
     };
@@ -2003,6 +2098,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
     setDueInDays(7);
     setCustomDueDate(null);
     setShowDueDatePicker(false);
+    setOptionalStartDays(null);
     const resetProjectId = defaultProjectId || (projects.length > 0 ? projects[0].id : null);
     setSelectedProject(resetProjectId);
     setTypeIndex(types.findIndex(t => t.name === 'Regular'));
@@ -2072,35 +2168,50 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
 
       {/* Due Date Selection */}
       {isPastTask && (
-        <div className="relative">
-          <button
-            ref={dueDateRef}
-            type="button"
-            onClick={() => setShowDueDatePicker(!showDueDatePicker)}
-            onKeyDown={handleDueDateKeyDown}
-            className={`px-3 py-2 rounded-lg border outline-none text-sm font-medium min-w-[80px] transition-all text-center ${
-              step === 'dueDate'
-                ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
-                : 'border-gray-200 bg-[#F9F9F9]'
-            }`}
-          >
-            {customDueDate 
-              ? formatDateToDDMMM(customDueDate)
-              : `${dueInDays}d`
-            }
-          </button>
-          {showDueDatePicker && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
-              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
-                <input
-                  type="date"
-                  onChange={handleDatePickerChange}
-                  className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
-                  autoFocus
-                />
-              </div>
-            </>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <button
+              ref={dueDateRef}
+              type="button"
+              onClick={() => setShowDueDatePicker(!showDueDatePicker)}
+              onKeyDown={handleDueDateKeyDown}
+              className={`px-3 py-2 rounded-lg border outline-none text-sm font-medium min-w-[80px] transition-all text-center ${
+                step === 'dueDate'
+                  ? 'border-[#0066CC] ring-2 ring-[#0066CC] shadow-sm bg-white'
+                  : 'border-gray-200 bg-[#F9F9F9]'
+              }`}
+            >
+              {customDueDate 
+                ? formatDateToDDMMM(customDueDate)
+                : `${dueInDays}d`
+              }
+            </button>
+            {showDueDatePicker && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowDueDatePicker(false)} />
+                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 z-20">
+                  <input
+                    type="date"
+                    onChange={handleDatePickerChange}
+                    className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0066CC]"
+                    autoFocus
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          {step === 'dueDate' && (
+            <select
+              value={optionalStartDays === null ? '' : optionalStartDays}
+              onChange={(e) => setOptionalStartDays(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+              className="px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-[#F9F9F9] outline-none focus:ring-2 focus:ring-[#0066CC]"
+              title="Start (optional) for Gantt bar"
+            >
+              <option value="">Start: none</option>
+              {[0, 1, 2, 3, 5, 7, 10, 14].map((d) => (
+                <option key={d} value={d}>Start: {d}d</option>
+              ))}
+            </select>
           )}
         </div>
       )}
@@ -3159,6 +3270,275 @@ function CalendarView({ projects, tasks, types, statuses, persons, getStatusColo
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Gantt View Component
+function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, getTypeColor, getPersonName, goToProject, ganttScopeProjectIds, setGanttScopeProjectIds }) {
+  const [rangeWeeks, setRangeWeeks] = useState(12);
+  const [chartStart, setChartStart] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  // Filter tasks by scope
+  const filteredTasks = useMemo(() => {
+    if (ganttScopeProjectIds === null || ganttScopeProjectIds.length === 0) return tasks;
+    return tasks.filter(t => ganttScopeProjectIds.includes(t.projectId));
+  }, [tasks, ganttScopeProjectIds]);
+
+  // Build list of rows: with due date first (for chart), then no-date; grouped by project when multiple
+  const scopeProjectIds = ganttScopeProjectIds === null || ganttScopeProjectIds.length === 0
+    ? [...new Set(filteredTasks.map(t => t.projectId))]
+    : ganttScopeProjectIds;
+  const multiProject = scopeProjectIds.length > 1;
+
+  const { rows, noDateTasks } = useMemo(() => {
+    const withDate = filteredTasks.filter(t => t.dueDate).sort((a, b) => {
+      const da = parseDueDate(a.dueDate);
+      const db = parseDueDate(b.dueDate);
+      if (!da || !db) return 0;
+      return da - db;
+    });
+    const noDate = filteredTasks.filter(t => !t.dueDate);
+    if (!multiProject) {
+      return { rows: withDate.map(t => ({ type: 'task', task: t })), noDateTasks: noDate };
+    }
+    const rowsList = [];
+    for (const pid of scopeProjectIds) {
+      const proj = projects.find(p => p.id === pid);
+      const projectTasks = withDate.filter(t => t.projectId === pid);
+      if (projectTasks.length) {
+        rowsList.push({ type: 'project', project: proj });
+        projectTasks.forEach(t => rowsList.push({ type: 'task', task: t }));
+      }
+    }
+    return { rows: rowsList, noDateTasks: noDate };
+  }, [filteredTasks, multiProject, scopeProjectIds, projects]);
+
+  const rangeEnd = useMemo(() => {
+    const e = new Date(chartStart);
+    e.setDate(e.getDate() + rangeWeeks * 7);
+    return e;
+  }, [chartStart, rangeWeeks]);
+
+  const chartWidth = 800;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const totalDays = Math.max(1, Math.ceil((rangeEnd - chartStart) / dayMs));
+  const pxPerDay = chartWidth / totalDays;
+
+  const goToToday = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    setChartStart(d);
+  };
+
+  const toggleProjectInScope = (projectId) => {
+    if (ganttScopeProjectIds === null) {
+      setGanttScopeProjectIds([projectId]);
+    } else {
+      const set = new Set(ganttScopeProjectIds);
+      if (set.has(projectId)) {
+        set.delete(projectId);
+        setGanttScopeProjectIds(set.size ? [...set] : null);
+      } else {
+        set.add(projectId);
+        setGanttScopeProjectIds([...set]);
+      }
+    }
+  };
+
+  const selectAllProjects = () => setGanttScopeProjectIds(null);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const projectPickerRef = useRef(null);
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (projectPickerRef.current && !projectPickerRef.current.contains(e.target)) setShowProjectPicker(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Toolbar */}
+      <div className="bg-white border-b border-gray-200 p-4 flex flex-wrap items-center gap-3">
+        <h2 className="text-lg font-semibold text-[#1D1D1F]">Gantt</h2>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Scope:</span>
+          <button
+            onClick={selectAllProjects}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              ganttScopeProjectIds === null ? 'bg-[#0066CC] text-white' : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-gray-200'
+            }`}
+          >
+            All projects
+          </button>
+          <div className="relative inline-block" ref={projectPickerRef}>
+            <button
+              type="button"
+              onClick={() => setShowProjectPicker(!showProjectPicker)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-[#F5F5F7] text-[#1D1D1F] hover:bg-gray-200 border border-gray-200"
+            >
+              {ganttScopeProjectIds === null || ganttScopeProjectIds.length === 0
+                ? 'Select projects'
+                : ganttScopeProjectIds.length === 1
+                  ? projects.find(p => p.id === ganttScopeProjectIds[0])?.name || '1 project'
+                  : `${ganttScopeProjectIds.length} projects`}
+            </button>
+            {showProjectPicker && (
+              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 min-w-[180px] max-h-60 overflow-y-auto">
+                {projects.map(proj => (
+                  <label key={proj.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#F5F5F7] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ganttScopeProjectIds === null || ganttScopeProjectIds?.includes(proj.id)}
+                      onChange={() => toggleProjectInScope(proj.id)}
+                    />
+                    <span className="text-sm text-[#1D1D1F]">{proj.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={rangeWeeks}
+            onChange={(e) => setRangeWeeks(Number(e.target.value))}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm bg-white"
+          >
+            <option value={6}>6 weeks</option>
+            <option value={12}>12 weeks</option>
+            <option value={26}>6 months</option>
+          </select>
+          <button onClick={goToToday} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-[#0066CC] text-white hover:bg-[#0052A3]">
+            Today
+          </button>
+        </div>
+      </div>
+
+      {/* Gantt content: list + chart */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        <div className="flex flex-col flex-1 overflow-auto p-4">
+          <div className="flex rounded-xl border border-gray-200 bg-white overflow-hidden min-h-[400px]">
+            {/* Left: task list */}
+            <div className="w-72 flex-shrink-0 border-r border-gray-200 flex flex-col">
+              <div className="bg-[#F5F5F7] px-3 py-2 border-b border-gray-200 text-xs font-semibold text-[#1D1D1F]">
+                Task / Project
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {rows.map((row, idx) => {
+                  if (row.type === 'project') {
+                    return (
+                      <div key={`p-${row.project?.id}`} className="px-3 py-2 bg-[#F9F9F9] border-b border-gray-100 font-semibold text-sm text-[#1D1D1F]">
+                        {row.project?.name}
+                      </div>
+                    );
+                  }
+                  const task = row.task;
+                  const statusColor = getStatusColor(task.status);
+                  return (
+                    <div
+                      key={task.id}
+                      className="px-3 py-0 border-b border-gray-100 text-sm text-[#1D1D1F] flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
+                      style={{ borderLeft: `3px solid ${statusColor}`, height: 36 }}
+                      onClick={() => goToProject(task.projectId)}
+                    >
+                      <span className="truncate flex-1" title={task.name}>{task.name}</span>
+                      {task.dueDate && <span className="text-gray-500 text-xs flex-shrink-0">{task.dueDate}</span>}
+                    </div>
+                  );
+                })}
+                {noDateTasks.length > 0 && (
+                  <>
+                    <div className="px-3 py-2 bg-[#F9F9F9] border-b border-gray-100 font-semibold text-xs text-gray-500">No date</div>
+                    {noDateTasks.map(task => (
+                      <div
+                        key={task.id}
+                        className="px-3 py-2 border-b border-gray-100 text-sm text-gray-500 flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
+                        onClick={() => goToProject(task.projectId)}
+                      >
+                        <span className="truncate flex-1">{task.name}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Right: time chart */}
+            <div className="flex-1 overflow-x-auto overflow-y-auto">
+              <div style={{ minWidth: chartWidth, minHeight: Math.max(400, rows.filter(r => r.type === 'task').length * 36 + 40) }} className="relative">
+                {/* Time axis header */}
+                <div className="bg-[#F5F5F7] border-b border-gray-200 text-xs font-medium text-[#1D1D1F] h-8 relative">
+                  {(() => {
+                    const labels = [];
+                    for (let i = 0; i <= totalDays; i += 7) {
+                      const d = new Date(chartStart);
+                      d.setDate(d.getDate() + i);
+                      const left = (i / totalDays) * chartWidth;
+                      labels.push(
+                        <div key={i} className="absolute top-0 bottom-0 flex items-center border-r border-gray-200 pl-1" style={{ left, width: 60 }}>
+                          {d.getDate()}/{d.getMonth() + 1}
+                        </div>
+                      );
+                    }
+                    return labels;
+                  })()}
+                </div>
+                {/* Task rows: bars / milestones */}
+                <div className="relative" style={{ minHeight: rows.filter(r => r.type === 'task').length * 36 }}>
+                  {rows.filter(r => r.type === 'task').map((row, idx) => {
+                    const task = row.task;
+                    const dueObj = parseDueDate(task.dueDate);
+                    if (!dueObj) return null;
+                    const startObj = task.startDate ? parseDueDate(task.startDate) : null;
+                    const leftDate = startObj && startObj <= dueObj ? startObj : dueObj;
+                    const rightDate = dueObj;
+                    const leftPx = Math.max(0, (leftDate - chartStart) / dayMs * pxPerDay);
+                    const rightPx = Math.min(chartWidth, (rightDate - chartStart) / dayMs * pxPerDay);
+                    const isMilestone = !task.startDate || !startObj;
+                    const statusColor = getStatusColor(task.status);
+                    const rowTop = idx * 36;
+                    return (
+                      <div key={task.id} className="absolute left-0 right-0 flex items-center" style={{ top: rowTop, height: 32 }}>
+                        {isMilestone ? (
+                          <div
+                            className="absolute h-3 w-3 rounded-full border-2 border-white shadow"
+                            style={{ left: leftPx - 6, top: 6, backgroundColor: statusColor }}
+                            title={`${task.name} — ${task.dueDate}`}
+                          />
+                        ) : (
+                          <div
+                            className="absolute rounded h-4"
+                            style={{ left: leftPx, width: Math.max(4, rightPx - leftPx), backgroundColor: statusColor, opacity: 0.85 }}
+                            title={`${task.name} ${task.startDate} → ${task.dueDate}`}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Today line */}
+                {(() => {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  if (today >= chartStart && today <= rangeEnd) {
+                    const x = ((today - chartStart) / dayMs) * pxPerDay;
+                    return (
+                      <div className="absolute top-0 bottom-0 w-0.5 bg-[#0066CC] z-10 pointer-events-none" style={{ left: x }} />
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
             </div>
           </div>
         </div>
