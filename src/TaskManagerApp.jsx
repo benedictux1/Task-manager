@@ -3322,20 +3322,29 @@ function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, 
     return { rows: rowsList, noDateTasks: noDate };
   }, [filteredTasks, multiProject, scopeProjectIds, projects]);
 
+  const ROW_HEIGHT = 36;
+  const HEADER_HEIGHT = 32;
+  const PX_PER_DAY = 14;
+
   const rangeEnd = useMemo(() => {
     const e = new Date(chartStart);
     e.setDate(e.getDate() + rangeWeeks * 7);
     return e;
   }, [chartStart, rangeWeeks]);
 
-  const chartWidth = 800;
   const dayMs = 24 * 60 * 60 * 1000;
   const totalDays = Math.max(1, Math.ceil((rangeEnd - chartStart) / dayMs));
-  const pxPerDay = chartWidth / totalDays;
+  const chartWidth = PX_PER_DAY * totalDays;
 
   const goToToday = () => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
+    setChartStart(d);
+  };
+
+  const shiftChart = (weeks) => {
+    const d = new Date(chartStart);
+    d.setDate(d.getDate() + weeks * 7);
     setChartStart(d);
   };
 
@@ -3409,6 +3418,9 @@ function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, 
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => shiftChart(-2)} className="px-2 py-1.5 rounded-lg text-sm bg-[#F5F5F7] hover:bg-gray-200">
+            <ChevronRight className="w-4 h-4 text-gray-600 rotate-180" />
+          </button>
           <select
             value={rangeWeeks}
             onChange={(e) => setRangeWeeks(Number(e.target.value))}
@@ -3418,128 +3430,134 @@ function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, 
             <option value={12}>12 weeks</option>
             <option value={26}>6 months</option>
           </select>
+          <button onClick={() => shiftChart(2)} className="px-2 py-1.5 rounded-lg text-sm bg-[#F5F5F7] hover:bg-gray-200">
+            <ChevronRight className="w-4 h-4 text-gray-600" />
+          </button>
           <button onClick={goToToday} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-[#0066CC] text-white hover:bg-[#0052A3]">
             Today
           </button>
         </div>
       </div>
 
-      {/* Gantt content: list + chart */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex flex-col flex-1 overflow-auto p-4">
-          <div className="flex rounded-xl border border-gray-200 bg-white overflow-hidden min-h-[400px]">
-            {/* Left: task list */}
-            <div className="w-72 flex-shrink-0 border-r border-gray-200 flex flex-col">
-              <div className="bg-[#F5F5F7] px-3 py-2 border-b border-gray-200 text-xs font-semibold text-[#1D1D1F]">
+      {/* Gantt content: single scroll container, sticky left column */}
+      <div className="flex-1 overflow-auto p-4 min-h-0">
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="relative" style={{ minWidth: 288 + chartWidth }}>
+            {/* Header row: left label + date axis */}
+            <div className="flex sticky top-0 z-20">
+              <div className="w-72 flex-shrink-0 sticky left-0 z-30 bg-[#F5F5F7] px-3 border-b border-r border-gray-200 text-xs font-semibold text-[#1D1D1F] flex items-center" style={{ height: HEADER_HEIGHT }}>
                 Task / Project
               </div>
-              <div className="flex-1 overflow-y-auto">
-                {rows.map((row, idx) => {
-                  if (row.type === 'project') {
-                    return (
-                      <div key={`p-${row.project?.id}`} className="px-3 py-2 bg-[#F9F9F9] border-b border-gray-100 font-semibold text-sm text-[#1D1D1F]">
-                        {row.project?.name}
-                      </div>
-                    );
-                  }
-                  const task = row.task;
-                  const statusColor = getStatusColor(task.status);
-                  return (
-                    <div
-                      key={task.id}
-                      className="px-3 py-0 border-b border-gray-100 text-sm text-[#1D1D1F] flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
-                      style={{ borderLeft: `3px solid ${statusColor}`, height: 36 }}
-                      onClick={() => goToProject(task.projectId)}
-                    >
-                      <span className="truncate flex-1" title={task.name}>{task.name}</span>
-                      {task.dueDate && <span className="text-gray-500 text-xs flex-shrink-0">{task.dueDate}</span>}
-                    </div>
-                  );
-                })}
-                {noDateTasks.length > 0 && (
-                  <>
-                    <div className="px-3 py-2 bg-[#F9F9F9] border-b border-gray-100 font-semibold text-xs text-gray-500">No date</div>
-                    {noDateTasks.map(task => (
-                      <div
-                        key={task.id}
-                        className="px-3 py-2 border-b border-gray-100 text-sm text-gray-500 flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
-                        onClick={() => goToProject(task.projectId)}
-                      >
-                        <span className="truncate flex-1">{task.name}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Right: time chart */}
-            <div className="flex-1 overflow-x-auto overflow-y-auto">
-              <div style={{ minWidth: chartWidth, minHeight: Math.max(400, rows.filter(r => r.type === 'task').length * 36 + 40) }} className="relative">
-                {/* Time axis header */}
-                <div className="bg-[#F5F5F7] border-b border-gray-200 text-xs font-medium text-[#1D1D1F] h-8 relative">
-                  {(() => {
-                    const labels = [];
-                    for (let i = 0; i <= totalDays; i += 7) {
-                      const d = new Date(chartStart);
-                      d.setDate(d.getDate() + i);
-                      const left = (i / totalDays) * chartWidth;
-                      labels.push(
-                        <div key={i} className="absolute top-0 bottom-0 flex items-center border-r border-gray-200 pl-1" style={{ left, width: 60 }}>
-                          {d.getDate()}/{d.getMonth() + 1}
-                        </div>
-                      );
-                    }
-                    return labels;
-                  })()}
-                </div>
-                {/* Task rows: bars / milestones */}
-                <div className="relative" style={{ minHeight: rows.filter(r => r.type === 'task').length * 36 }}>
-                  {rows.filter(r => r.type === 'task').map((row, idx) => {
-                    const task = row.task;
-                    const dueObj = parseDueDate(task.dueDate);
-                    if (!dueObj) return null;
-                    const startObj = task.startDate ? parseDueDate(task.startDate) : null;
-                    const leftDate = startObj && startObj <= dueObj ? startObj : dueObj;
-                    const rightDate = dueObj;
-                    const leftPx = Math.max(0, (leftDate - chartStart) / dayMs * pxPerDay);
-                    const rightPx = Math.min(chartWidth, (rightDate - chartStart) / dayMs * pxPerDay);
-                    const isMilestone = !task.startDate || !startObj;
-                    const statusColor = getStatusColor(task.status);
-                    const rowTop = idx * 36;
-                    return (
-                      <div key={task.id} className="absolute left-0 right-0 flex items-center" style={{ top: rowTop, height: 32 }}>
-                        {isMilestone ? (
-                          <div
-                            className="absolute h-3 w-3 rounded-full border-2 border-white shadow"
-                            style={{ left: leftPx - 6, top: 6, backgroundColor: statusColor }}
-                            title={`${task.name} — ${task.dueDate}`}
-                          />
-                        ) : (
-                          <div
-                            className="absolute rounded h-4"
-                            style={{ left: leftPx, width: Math.max(4, rightPx - leftPx), backgroundColor: statusColor, opacity: 0.85 }}
-                            title={`${task.name} ${task.startDate} → ${task.dueDate}`}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* Today line */}
+              <div className="relative bg-[#F5F5F7] border-b border-gray-200" style={{ width: chartWidth, height: HEADER_HEIGHT }}>
                 {(() => {
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  if (today >= chartStart && today <= rangeEnd) {
-                    const x = ((today - chartStart) / dayMs) * pxPerDay;
-                    return (
-                      <div className="absolute top-0 bottom-0 w-0.5 bg-[#0066CC] z-10 pointer-events-none" style={{ left: x }} />
+                  const labels = [];
+                  for (let i = 0; i <= totalDays; i += 7) {
+                    const d = new Date(chartStart);
+                    d.setDate(d.getDate() + i);
+                    const left = i * PX_PER_DAY;
+                    labels.push(
+                      <div key={i} className="absolute top-0 bottom-0 flex items-center border-r border-gray-200 pl-1 text-xs font-medium text-[#1D1D1F]" style={{ left }}>
+                        {d.getDate()}/{d.getMonth() + 1}
+                      </div>
                     );
                   }
-                  return null;
+                  return labels;
                 })()}
               </div>
             </div>
+
+            {/* Data rows */}
+            {rows.map((row, idx) => {
+              if (row.type === 'project') {
+                return (
+                  <div key={`p-${row.project?.id}`} className="flex">
+                    <div className="w-72 flex-shrink-0 sticky left-0 z-10 bg-[#F9F9F9] px-3 border-b border-r border-gray-100 font-semibold text-sm text-[#1D1D1F] flex items-center" style={{ height: ROW_HEIGHT }}>
+                      {row.project?.name}
+                    </div>
+                    <div className="relative border-b border-gray-100 bg-[#F9F9F9]" style={{ width: chartWidth, height: ROW_HEIGHT }} />
+                  </div>
+                );
+              }
+              const task = row.task;
+              const statusColor = getStatusColor(task.status);
+              const dueObj = parseDueDate(task.dueDate);
+              const startObj = task.startDate ? parseDueDate(task.startDate) : null;
+              const isMilestone = !task.startDate || !startObj;
+              return (
+                <div key={task.id} className="flex group">
+                  {/* Left cell */}
+                  <div
+                    className="w-72 flex-shrink-0 sticky left-0 z-10 bg-white px-3 border-b border-r border-gray-100 text-sm text-[#1D1D1F] flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
+                    style={{ borderLeft: `3px solid ${statusColor}`, height: ROW_HEIGHT }}
+                    onClick={() => goToProject(task.projectId)}
+                  >
+                    <span className="truncate flex-1" title={task.name}>{task.name}</span>
+                    {task.dueDate && <span className="text-gray-500 text-xs flex-shrink-0">{task.dueDate}</span>}
+                  </div>
+                  {/* Right chart cell */}
+                  <div className="relative border-b border-gray-100" style={{ width: chartWidth, height: ROW_HEIGHT }}>
+                    {dueObj && (() => {
+                      const leftDate = startObj && startObj <= dueObj ? startObj : dueObj;
+                      const leftPx = (leftDate - chartStart) / dayMs * PX_PER_DAY;
+                      const rightPx = (dueObj - chartStart) / dayMs * PX_PER_DAY;
+                      if (isMilestone) {
+                        return (
+                          <div
+                            className="absolute h-3 w-3 rounded-full border-2 border-white shadow"
+                            style={{ left: leftPx - 6, top: (ROW_HEIGHT - 12) / 2, backgroundColor: statusColor }}
+                            title={`${task.name} — ${task.dueDate}`}
+                          />
+                        );
+                      }
+                      return (
+                        <div
+                          className="absolute rounded h-4"
+                          style={{ left: leftPx, top: (ROW_HEIGHT - 16) / 2, width: Math.max(4, rightPx - leftPx), backgroundColor: statusColor, opacity: 0.85 }}
+                          title={`${task.name} ${task.startDate} → ${task.dueDate}`}
+                        />
+                      );
+                    })()}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* No-date section */}
+            {noDateTasks.length > 0 && (
+              <>
+                <div className="flex">
+                  <div className="w-72 flex-shrink-0 sticky left-0 z-10 bg-[#F9F9F9] px-3 border-b border-r border-gray-100 font-semibold text-xs text-gray-500 flex items-center" style={{ height: ROW_HEIGHT }}>
+                    No date
+                  </div>
+                  <div className="border-b border-gray-100 bg-[#F9F9F9]" style={{ width: chartWidth, height: ROW_HEIGHT }} />
+                </div>
+                {noDateTasks.map(task => (
+                  <div key={task.id} className="flex">
+                    <div
+                      className="w-72 flex-shrink-0 sticky left-0 z-10 bg-white px-3 border-b border-r border-gray-100 text-sm text-gray-500 flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
+                      style={{ height: ROW_HEIGHT }}
+                      onClick={() => goToProject(task.projectId)}
+                    >
+                      <span className="truncate flex-1">{task.name}</span>
+                    </div>
+                    <div className="border-b border-gray-100" style={{ width: chartWidth, height: ROW_HEIGHT }} />
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* Today line — inside the relative/minWidth container so it scrolls with content */}
+            {(() => {
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              if (today >= chartStart && today <= rangeEnd) {
+                const x = 288 + ((today - chartStart) / dayMs) * PX_PER_DAY;
+                return (
+                  <div className="absolute top-0 bottom-0 w-0.5 bg-[#0066CC] pointer-events-none" style={{ left: x, zIndex: 15 }} />
+                );
+              }
+              return null;
+            })()}
           </div>
         </div>
       </div>
