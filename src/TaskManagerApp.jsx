@@ -304,6 +304,7 @@ export default function TaskManagerApp() {
       const newTask = await tasksAPI.create({
         name: newTaskInput,
         projectId: projectId,
+        projectIds: [projectId],
         type: 'Regular',
         status: 'My action',
         startDate: '',
@@ -588,7 +589,7 @@ function ProjectView({
   const [notesExpanded, setNotesExpanded] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-  const projectTasks = tasks.filter(t => t.projectId === selectedProjectId);
+  const projectTasks = tasks.filter(t => (t.projectIds || [t.projectId]).includes(selectedProjectId));
 
   const sortedTasks = useMemo(() => {
     // Build type order from types array (first = highest priority)
@@ -724,6 +725,7 @@ function ProjectView({
                   <tr>
                     <th className="w-12 px-4 py-3"></th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Task</th>
+                    <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Projects</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Type</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Status</th>
                     <th className="text-left px-4 py-3 text-sm font-semibold text-[#1D1D1F]">Due In</th>
@@ -737,6 +739,7 @@ function ProjectView({
                     <ProjectTaskTableRow
                       key={task.id}
                       task={task}
+                      projects={projects}
                       types={types}
                       statuses={statuses}
                       persons={persons}
@@ -1447,6 +1450,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
     const newTask = {
       name: taskName.trim(),
       projectId: projectId,
+      projectIds: [projectId],
       type: selectedType,
       status: selectedStatus,
       startDate,
@@ -1754,6 +1758,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
     const newTask = {
       name: taskName.trim(),
       projectId: selectedProjectId,
+      projectIds: [selectedProjectId],
       type: selectedType,
       status: selectedStatus,
       startDate,
@@ -2078,6 +2083,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
     const newTask = {
       name: taskName.trim(),
       projectId: projectId,
+      projectIds: [projectId],
       type: selectedType,
       status: selectedStatus,
       startDate,
@@ -2261,7 +2267,7 @@ function TaskView({
     let filtered = tasks.filter(task => {
       if (filterType.length > 0 && !filterType.includes(task.type)) return false;
       if (filterStatus.length > 0 && !filterStatus.includes(task.status)) return false;
-      if (filterProject.length > 0 && !filterProject.includes(task.projectId)) return false;
+      if (filterProject.length > 0 && !(task.projectIds || [task.projectId]).some(pid => filterProject.includes(pid))) return false;
       // POC filter - check if task has any of the filtered person IDs
       if (filterPOC.length > 0) {
         const taskPersonIds = task.personIds || [];
@@ -2361,6 +2367,7 @@ function TaskView({
                     key={task.id}
                     task={task}
                     project={projects.find(p => p.id === task.projectId)}
+                    projects={projects}
                     types={types}
                     statuses={statuses}
                     persons={persons}
@@ -2386,7 +2393,7 @@ function TaskView({
 
 
 // Project Task Table Row Component (for Project View table)
-function ProjectTaskTableRow({ task, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask }) {
+function ProjectTaskTableRow({ task, projects, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.name);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -2456,6 +2463,14 @@ function ProjectTaskTableRow({ task, types, statuses, persons, getStatusColor, g
             {task.name}
           </span>
         )}
+      </td>
+      <td className="px-4 py-3">
+        <ProjectMultiSelect
+          selectedIds={task.projectIds || [task.projectId]}
+          projects={projects || []}
+          onChange={(newIds) => updateTask(task.id, 'projectIds', newIds)}
+          compact={true}
+        />
       </td>
       <td className="px-4 py-3">
         <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} compact={true} isDone={isDone} />
@@ -2647,7 +2662,7 @@ function TaskRow({ task, types, statuses, getStatusColor, getTypeColor, updateTa
 }
 
 // Task Table Row Component (for Task View)
-function TaskTableRow({ task, project, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask, onProjectClick }) {
+function TaskTableRow({ task, project, projects, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask, onProjectClick }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.name);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -2719,16 +2734,12 @@ function TaskTableRow({ task, project, types, statuses, persons, getStatusColor,
         )}
       </td>
       <td className="px-4 py-3">
-        {project ? (
-          <button
-            onClick={() => onProjectClick(task.projectId)}
-            className="px-3 py-1 bg-[#0066CC]/10 text-[#0066CC] rounded-full text-sm hover:bg-[#0066CC]/20 transition-colors"
-          >
-            {project.name}
-          </button>
-        ) : (
-          <span className="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">No Project</span>
-        )}
+        <ProjectMultiSelect
+          selectedIds={task.projectIds || [task.projectId]}
+          projects={projects}
+          onChange={(newIds) => updateTask(task.id, 'projectIds', newIds)}
+          compact={true}
+        />
       </td>
       <td className="px-4 py-3">
         <TypeDropdown value={task.type} options={types} onChange={(value) => updateTask(task.id, 'type', value)} getTypeColor={getTypeColor} compact={true} isDone={isDone} />
@@ -2920,6 +2931,86 @@ function StatusDropdown({ value, options, onChange, getStatusColor, className = 
                 <span className="text-[#1D1D1F]">{option.name}</span>
               </button>
             ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Project Multi-Select Component (for assigning tasks to multiple projects)
+function ProjectMultiSelect({ selectedIds = [], projects, onChange, compact = false }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const selectedProjects = projects.filter(p => selectedIds.includes(p.id));
+
+  const toggleProject = (projectId) => {
+    if (selectedIds.includes(projectId)) {
+      if (selectedIds.length <= 1) return;
+      onChange(selectedIds.filter(id => id !== projectId));
+    } else {
+      onChange([...selectedIds, projectId]);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between gap-1 px-2 py-1 rounded-lg border border-gray-200 hover:border-[#0066CC] transition-colors bg-white ${
+          compact ? 'text-xs' : 'text-sm'
+        }`}
+      >
+        <div className="flex items-center gap-1 overflow-hidden">
+          {selectedProjects.length > 0 ? (
+            <div className="flex items-center gap-1">
+              {selectedProjects.slice(0, 2).map(proj => (
+                <span
+                  key={proj.id}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-[#E8E8ED] text-[#1D1D1F]"
+                >
+                  {proj.name}
+                </span>
+              ))}
+              {selectedProjects.length > 2 && (
+                <span className="text-gray-500 text-xs">+{selectedProjects.length - 2}</span>
+              )}
+            </div>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </div>
+        <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0" />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 max-h-60 overflow-y-auto">
+            {projects.map(proj => {
+              const checked = selectedIds.includes(proj.id);
+              const disableUncheck = checked && selectedIds.length <= 1;
+              return (
+                <button
+                  key={proj.id}
+                  onClick={() => toggleProject(proj.id)}
+                  className={`w-full text-left px-3 py-2 hover:bg-[#F5F5F7] text-sm flex items-center gap-2 ${
+                    checked ? 'bg-blue-50' : ''
+                  } ${disableUncheck ? 'opacity-60' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {}}
+                    className="w-4 h-4 rounded border-gray-300 text-[#0066CC]"
+                  />
+                  <span className="text-[#1D1D1F] truncate">{proj.name}</span>
+                </button>
+              );
+            })}
+            {projects.length === 0 && (
+              <p className="px-3 py-2 text-sm text-gray-400 italic">No projects</p>
+            )}
           </div>
         </>
       )}
@@ -3231,7 +3322,8 @@ function CalendarView({ projects, tasks, types, statuses, persons, getStatusColo
                     </div>
                     <div className="space-y-0.5 sm:space-y-1">
                       {dayTasks.map(task => {
-                        const project = projects.find(p => p.id === task.projectId);
+                        const taskPids = task.projectIds || [task.projectId];
+                        const projectNames = taskPids.map(pid => projects.find(p => p.id === pid)?.name).filter(Boolean);
                         const statusColor = getStatusColor(task.status);
                         
                         // Get person names for this task
@@ -3247,14 +3339,14 @@ function CalendarView({ projects, tasks, types, statuses, persons, getStatusColo
                               backgroundColor: `${statusColor}20`,
                               borderLeft: `3px solid ${statusColor}`
                             }}
-                            onClick={() => goToProject(task.projectId)}
+                            onClick={() => goToProject(taskPids[0])}
                           >
                             <div className="font-medium text-[#1D1D1F] truncate" title={task.name}>
                               {task.name}
                             </div>
-                            {project && (
-                              <div className="text-gray-600 truncate text-xs hidden sm:block" title={project.name}>
-                                {project.name}
+                            {projectNames.length > 0 && (
+                              <div className="text-gray-600 truncate text-xs hidden sm:block" title={projectNames.join(', ')}>
+                                {projectNames.join(', ')}
                               </div>
                             )}
                             {taskPersonNames.length > 0 && (
@@ -3290,12 +3382,12 @@ function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, 
   // Filter tasks by scope
   const filteredTasks = useMemo(() => {
     if (ganttScopeProjectIds === null || ganttScopeProjectIds.length === 0) return tasks;
-    return tasks.filter(t => ganttScopeProjectIds.includes(t.projectId));
+    return tasks.filter(t => (t.projectIds || [t.projectId]).some(pid => ganttScopeProjectIds.includes(pid)));
   }, [tasks, ganttScopeProjectIds]);
 
   // Build list of rows: with due date first (for chart), then no-date; grouped by project when multiple
   const scopeProjectIds = ganttScopeProjectIds === null || ganttScopeProjectIds.length === 0
-    ? [...new Set(filteredTasks.map(t => t.projectId))]
+    ? [...new Set(filteredTasks.flatMap(t => t.projectIds || [t.projectId]))]
     : ganttScopeProjectIds;
   const multiProject = scopeProjectIds.length > 1;
 
@@ -3313,7 +3405,7 @@ function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, 
     const rowsList = [];
     for (const pid of scopeProjectIds) {
       const proj = projects.find(p => p.id === pid);
-      const projectTasks = withDate.filter(t => t.projectId === pid);
+      const projectTasks = withDate.filter(t => (t.projectIds || [t.projectId]).includes(pid));
       if (projectTasks.length) {
         rowsList.push({ type: 'project', project: proj });
         projectTasks.forEach(t => rowsList.push({ type: 'task', task: t }));
@@ -3489,7 +3581,7 @@ function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, 
                   <div
                     className="w-72 flex-shrink-0 sticky left-0 z-10 bg-white px-3 border-b border-r border-gray-100 text-sm text-[#1D1D1F] flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
                     style={{ borderLeft: `3px solid ${statusColor}`, height: ROW_HEIGHT }}
-                    onClick={() => goToProject(task.projectId)}
+                    onClick={() => goToProject((task.projectIds || [task.projectId])[0])}
                   >
                     <span className="truncate flex-1" title={task.name}>{task.name}</span>
                     {task.dueDate && <span className="text-gray-500 text-xs flex-shrink-0">{task.dueDate}</span>}
@@ -3536,7 +3628,7 @@ function GanttView({ projects, tasks, types, statuses, persons, getStatusColor, 
                     <div
                       className="w-72 flex-shrink-0 sticky left-0 z-10 bg-white px-3 border-b border-r border-gray-100 text-sm text-gray-500 flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F7]"
                       style={{ height: ROW_HEIGHT }}
-                      onClick={() => goToProject(task.projectId)}
+                      onClick={() => goToProject((task.projectIds || [task.projectId])[0])}
                     >
                       <span className="truncate flex-1">{task.name}</span>
                     </div>
@@ -3739,12 +3831,12 @@ function PersonView({
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <button
-                                onClick={() => goToProject(task.projectId)}
-                                className="text-sm text-[#0066CC] hover:underline"
-                              >
-                                {getProjectName(task.projectId)}
-                              </button>
+                              <ProjectMultiSelect
+                                selectedIds={task.projectIds || [task.projectId]}
+                                projects={projects}
+                                onChange={(newIds) => updateTask(task.id, 'projectIds', newIds)}
+                                compact={true}
+                              />
                             </td>
                             <td className="px-4 py-3">
                               <span

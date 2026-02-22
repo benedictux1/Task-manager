@@ -103,14 +103,22 @@ app.delete('/api/projects/:id', async (req, res) => {
 
 // ----- TASKS -----
 
-// Helper function to format task with persons
-const formatTaskWithPersons = (task) => {
+// Helper: flatten join-table relations into arrays the frontend expects
+const formatTask = (task) => {
   return {
     ...task,
     personIds: task.persons ? task.persons.map(tp => tp.personId) : [],
-    personNames: task.persons ? task.persons.map(tp => tp.person?.name).filter(Boolean) : []
+    personNames: task.persons ? task.persons.map(tp => tp.person?.name).filter(Boolean) : [],
+    projectIds: task.taskProjects && task.taskProjects.length > 0
+      ? task.taskProjects.map(tp => tp.projectId)
+      : [task.projectId],
+    projectNames: task.taskProjects
+      ? task.taskProjects.map(tp => tp.project?.name).filter(Boolean)
+      : [],
   };
 };
+// Backward-compat alias
+const formatTaskWithPersons = formatTask;
 
 // Get all tasks
 app.get('/api/tasks', async (req, res) => {
@@ -118,13 +126,12 @@ app.get('/api/tasks', async (req, res) => {
     const tasks = await prisma.task.findMany({
       include: { 
         project: true,
-        persons: {
-          include: { person: true }
-        }
+        persons: { include: { person: true } },
+        taskProjects: { include: { project: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(tasks.map(formatTaskWithPersons));
+    res.json(tasks.map(formatTask));
   } catch (error) {
     console.error('Error fetching tasks:', error);
     res.status(500).json({ error: 'Failed to fetch tasks' });
@@ -137,13 +144,12 @@ app.get('/api/projects/:projectId/tasks', async (req, res) => {
     const tasks = await prisma.task.findMany({
       where: { projectId: parseInt(req.params.projectId) },
       include: {
-        persons: {
-          include: { person: true }
-        }
+        persons: { include: { person: true } },
+        taskProjects: { include: { project: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(tasks.map(formatTaskWithPersons));
+    res.json(tasks.map(formatTask));
   } catch (error) {
     console.error('Error fetching tasks:', error);
     res.status(500).json({ error: 'Failed to fetch tasks' });
@@ -161,9 +167,8 @@ app.get('/api/tasks/by-person', async (req, res) => {
             task: {
               include: {
                 project: true,
-                persons: {
-                  include: { person: true }
-                }
+                persons: { include: { person: true } },
+                taskProjects: { include: { project: true } }
               }
             }
           }
@@ -187,30 +192,35 @@ app.get('/api/tasks/by-person', async (req, res) => {
 // Create task
 app.post('/api/tasks', async (req, res) => {
   try {
-    const { name, projectId, type, status, startDate, dueDate, notes, personIds } = req.body;
+    const { name, projectId, projectIds, type, status, startDate, dueDate, notes, personIds } = req.body;
+    // Support both projectIds array (new) and single projectId (backward compat)
+    const resolvedProjectIds = projectIds && projectIds.length > 0
+      ? projectIds.map(id => parseInt(id))
+      : [parseInt(projectId)];
+    const primaryProjectId = resolvedProjectIds[0];
+
     const task = await prisma.task.create({
       data: {
         name,
-        projectId: parseInt(projectId),
+        projectId: primaryProjectId,
         type: type || 'Regular',
         status: status || 'My action',
         startDate: startDate ?? '',
         dueDate: dueDate || '',
         notes: notes || '',
-        // Create person relationships if provided
         persons: personIds && personIds.length > 0 ? {
-          create: personIds.map(personId => ({
-            personId: parseInt(personId)
-          }))
-        } : undefined
+          create: personIds.map(personId => ({ personId: parseInt(personId) }))
+        } : undefined,
+        taskProjects: {
+          create: resolvedProjectIds.map(pid => ({ projectId: pid }))
+        }
       },
       include: {
-        persons: {
-          include: { person: true }
-        }
+        persons: { include: { person: true } },
+        taskProjects: { include: { project: true } }
       }
     });
-    res.status(201).json(formatTaskWithPersons(task));
+    res.status(201).json(formatTask(task));
   } catch (error) {
     console.error('Error creating task:', error);
     res.status(500).json({ error: 'Failed to create task' });
@@ -220,68 +230,69 @@ app.post('/api/tasks', async (req, res) => {
 // Update task
 app.put('/api/tasks/:id', async (req, res) => {
   try {
-    const { name, projectId, type, status, startDate, dueDate, notes, personIds } = req.body;
+    const { name, projectId, projectIds, type, status, startDate, dueDate, notes, personIds } = req.body;
     const taskId = parseInt(req.params.id);
     const updateData = {};
     
     if (name !== undefined) updateData.name = name;
-    if (projectId !== undefined) updateData.projectId = parseInt(projectId);
     if (type !== undefined) updateData.type = type;
     if (startDate !== undefined) updateData.startDate = startDate;
     if (dueDate !== undefined) updateData.dueDate = dueDate;
     if (notes !== undefined) updateData.notes = notes;
+
+    // Handle projectIds array (new) or single projectId (backward compat)
+    const resolvedProjectIds = projectIds !== undefined
+      ? projectIds.map(id => parseInt(id))
+      : (projectId !== undefined ? [parseInt(projectId)] : undefined);
+    if (resolvedProjectIds && resolvedProjectIds.length > 0) {
+      updateData.projectId = resolvedProjectIds[0];
+    }
     
     // Handle status change and completedAt timestamp
     if (status !== undefined) {
       updateData.status = status;
-      
-      // Get current task to check if status is changing
       const currentTask = await prisma.task.findUnique({ where: { id: taskId } });
-      
       if (status === 'Done' && currentTask?.status !== 'Done') {
-        // Task is being marked as Done - set completedAt timestamp
         updateData.completedAt = new Date();
       } else if (status !== 'Done' && currentTask?.status === 'Done') {
-        // Task is being unmarked from Done - clear completedAt
         updateData.completedAt = null;
       }
     }
     
     // Update task basic fields
-    const task = await prisma.task.update({
-      where: { id: taskId },
-      data: updateData
-    });
+    await prisma.task.update({ where: { id: taskId }, data: updateData });
     
     // Update person relationships if provided
     if (personIds !== undefined) {
-      // Delete existing relationships
-      await prisma.taskPerson.deleteMany({
-        where: { taskId }
-      });
-      
-      // Create new relationships
+      await prisma.taskPerson.deleteMany({ where: { taskId } });
       if (personIds.length > 0) {
         await prisma.taskPerson.createMany({
-          data: personIds.map(personId => ({
-            taskId,
-            personId: parseInt(personId)
-          }))
+          data: personIds.map(personId => ({ taskId, personId: parseInt(personId) }))
+        });
+      }
+    }
+
+    // Update project relationships if provided
+    if (resolvedProjectIds !== undefined) {
+      await prisma.taskProject.deleteMany({ where: { taskId } });
+      if (resolvedProjectIds.length > 0) {
+        await prisma.taskProject.createMany({
+          data: resolvedProjectIds.map(pid => ({ taskId, projectId: pid })),
+          skipDuplicates: true
         });
       }
     }
     
-    // Fetch updated task with persons
+    // Fetch updated task with all relations
     const updatedTask = await prisma.task.findUnique({
       where: { id: taskId },
       include: {
-        persons: {
-          include: { person: true }
-        }
+        persons: { include: { person: true } },
+        taskProjects: { include: { project: true } }
       }
     });
     
-    res.json(formatTaskWithPersons(updatedTask));
+    res.json(formatTask(updatedTask));
   } catch (error) {
     console.error('Error updating task:', error);
     res.status(500).json({ error: 'Failed to update task' });
