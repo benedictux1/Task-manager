@@ -1,0 +1,10 @@
+# Render Blueprint: ensures the frontend (Vite) is built so the server can serve the latest UI
+services:
+  - type: web
+    name: task-manager
+    runtime: node
+    # Build from repo root so both frontend and server are built
+    buildCommand: npm run build:render
+    startCommand: npm start
+    # Server runs from root and "npm start" does "cd server && npm start"
+    # Static files are served from ./dist (created by "npm run build" inside build:render)

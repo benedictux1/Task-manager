@@ -523,6 +523,43 @@ function TaskView({
   const [sortBy, setSortBy] = useState('priority'); // priority, name, project, type, status, dueDate
   const [sortOrder, setSortOrder] = useState('asc');
 
+  const getDueSortValue = (rawDueDate) => {
+    if (!rawDueDate) return Number.POSITIVE_INFINITY;
+    const dueDate = rawDueDate.toString().trim().toLowerCase();
+
+    if (!dueDate) return Number.POSITIVE_INFINITY;
+
+    if (dueDate === 'due today' || dueDate === 'today') {
+      return 0;
+    }
+
+    if (dueDate === 'overdue') {
+      return -1;
+    }
+
+    const daysMatch = dueDate.match(/(\d+)\s*day/);
+    if (daysMatch) {
+      return parseInt(daysMatch[1], 10);
+    }
+
+    const weeksMatch = dueDate.match(/(\d+)\s*week/);
+    if (weeksMatch) {
+      return parseInt(weeksMatch[1], 10) * 7;
+    }
+
+    const dateMatch = dueDate.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if (dateMatch) {
+      const month = parseInt(dateMatch[1], 10) - 1;
+      const day = parseInt(dateMatch[2], 10);
+      const year = dateMatch[3]
+        ? parseInt(dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3], 10)
+        : new Date().getFullYear();
+      return new Date(year, month, day).getTime();
+    }
+
+    return Number.POSITIVE_INFINITY;
+  };
+
   // Filter and sort tasks
   const filteredAndSortedTasks = useMemo(() => {
     let filtered = tasks.filter(task => {
@@ -550,9 +587,18 @@ function TaskView({
         const statusCompare = (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
         if (statusCompare !== 0) return statusCompare;
 
-        // Due date
-        if (a.dueDate && !b.dueDate) return -1;
-        if (!a.dueDate && b.dueDate) return 1;
+        const aHasDue = !!a.dueDate;
+        const bHasDue = !!b.dueDate;
+
+        if (!aHasDue && !bHasDue) return 0;
+        if (!aHasDue) return 1;
+        if (!bHasDue) return -1;
+
+        const aDue = getDueSortValue(a.dueDate);
+        const bDue = getDueSortValue(b.dueDate);
+
+        if (aDue < bDue) return -1;
+        if (aDue > bDue) return 1;
         return 0;
       }
 

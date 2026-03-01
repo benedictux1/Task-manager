@@ -384,7 +384,7 @@ export default function TaskManagerApp() {
   
   if (isLoading) {
     return (
-      <div className="h-screen bg-[#F5F5F7] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-[#0066CC] animate-spin mx-auto mb-4" />
           <p className="text-gray-600">Loading Task Manager...</p>
@@ -401,7 +401,7 @@ export default function TaskManagerApp() {
   };
 
   return (
-    <div className="h-screen bg-[#F5F5F7] flex flex-col">
+    <div className="min-h-screen bg-[#F5F5F7] flex flex-col">
       <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <h1 className="text-xl sm:text-2xl font-semibold text-[#1D1D1F]">Task Manager</h1>
         <div className="flex items-center gap-4">
@@ -626,7 +626,7 @@ function ProjectView({
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden relative">
+    <div className="flex-1 flex relative md:overflow-hidden">
       {/* Sidebar Toggle Button - Always Visible */}
       <button
         onClick={toggleSidebar}
@@ -641,6 +641,14 @@ function ProjectView({
         className="absolute left-0 top-0 bottom-0 w-2 z-30"
         onMouseEnter={() => setSidebarVisible(true)}
       />
+
+      {/* Mobile overlay when sidebar is open */}
+      {sidebarVisible && (
+        <div
+          className="fixed inset-0 bg-black/20 z-30 md:hidden"
+          onClick={toggleSidebar}
+        />
+      )}
 
       <aside
         className={`absolute left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 flex flex-col z-40 transition-transform duration-200 ${
@@ -683,7 +691,7 @@ function ProjectView({
         </nav>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-8">
+      <main className="flex-1 p-4 md:p-8 md:overflow-y-auto">
         <div className="mx-4">
           <div className="flex items-center gap-3 flex-wrap mb-8">
             <input
@@ -748,6 +756,7 @@ function ProjectView({
                       updateTask={updateTask}
                       toggleTaskDone={toggleTaskDone}
                       deleteTask={deleteTask}
+                      goToProject={setSelectedProjectId}
                     />
                   ))}
                 </tbody>
@@ -1484,6 +1493,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
 
   // Check if we're past the task step
   const isPastTask = step !== 'task';
+  const hasTaskName = taskName.trim().length > 0;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -1504,50 +1514,36 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
           autoFocus
         />
 
-        {/* Type Selection */}
-        {isPastTask && (
-          <KeyboardSelect
-            ref={typeSelectRef}
+        {/* Type Selection - dropdown for first-time create (tap-friendly) */}
+        {hasTaskName && (
+          <TypeDropdown
             value={selectedType}
             options={types}
-            onValueChange={(val) => {
+            onChange={(val) => {
               setSelectedType(val);
               setTypeIndex(types.findIndex(t => t.name === val));
             }}
-            onEnter={goToNextStep}
-            onEscape={resetForm}
-            onLeft={() => {}} // Can't go back from type
-            onRight={() => goToStep('status')}
-            getColor={getTypeColor}
-            displayKey="name"
-            valueKey="name"
-            isActive={step === 'type'}
+            getTypeColor={getTypeColor}
+            className="min-w-[100px]"
           />
         )}
 
-        {/* Status Selection */}
-        {isPastTask && (
-          <KeyboardSelect
-            ref={statusSelectRef}
+        {/* Status Selection - dropdown for first-time create (tap-friendly) */}
+        {hasTaskName && (
+          <StatusDropdown
             value={selectedStatus}
-            options={statuses.map(s => ({ name: s.name, value: s.name }))}
-            onValueChange={(val) => {
+            options={statuses}
+            onChange={(val) => {
               setSelectedStatus(val);
               setStatusIndex(statuses.findIndex(s => s.name === val));
             }}
-            onEnter={goToNextStep}
-            onEscape={resetForm}
-            onLeft={() => goToStep('type')}
-            onRight={() => goToStep('dueDate')}
-            getColor={getStatusColor}
-            displayKey="name"
-            valueKey="value"
-            isActive={step === 'status'}
+            getStatusColor={getStatusColor}
+            className="min-w-[120px]"
           />
         )}
 
         {/* Due Date Selection */}
-        {isPastTask && (
+        {hasTaskName && (
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <button
@@ -1596,30 +1592,30 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
           </div>
         )}
 
-        {/* POC Selection */}
-        {isPastTask && (
-          <KeyboardSelect
-            ref={pocSelectRef}
-            value={selectedPOC[0] || ''}
-            options={[{ name: '- (Unassigned)', value: '' }, ...(persons || []).map(p => ({ name: p.name, value: p.id }))]}
-            onValueChange={(val) => {
-              if (val === '' || val === null) {
-                setSelectedPOC([]);
-                setPocIndex(-1);
-              } else {
-                setSelectedPOC([parseInt(val)]);
-                setPocIndex((persons || []).findIndex(p => p.id === parseInt(val)));
-              }
-            }}
-            onEnter={createTask}
-            onEscape={resetForm}
-            onLeft={() => goToStep('dueDate')}
-            onRight={() => {}} // Can't go forward from POC, Enter creates task
-            displayKey="name"
-            valueKey="value"
-            isActive={step === 'poc'}
-            placeholder="- (Unassigned)"
-          />
+        {/* POC Selection - dropdown for first-time create (tap-friendly) */}
+        {hasTaskName && (
+          <div className="min-w-[140px]">
+            <select
+              value={selectedPOC[0] ?? ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '' || val === null) {
+                  setSelectedPOC([]);
+                  setPocIndex(-1);
+                } else {
+                  const id = parseInt(val, 10);
+                  setSelectedPOC([id]);
+                  setPocIndex((persons || []).findIndex(p => p.id === id));
+                }
+              }}
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-[#F5F5F7] text-sm text-[#1D1D1F] outline-none focus:ring-2 focus:ring-[#0066CC]"
+            >
+              <option value="">- (Unassigned)</option>
+              {(persons || []).map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
         )}
 
         {/* Instructions */}
@@ -1627,7 +1623,7 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
           {step === 'task' && (
             <span className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Type task name, press Enter
+              Type task name, then press Enter or tap Add
             </span>
           )}
           {(step === 'type' || step === 'status') && (
@@ -1649,6 +1645,18 @@ function InlineTaskCreator({ projects, types, statuses, persons, getStatusColor,
             </span>
           )}
         </div>
+
+        {/* Add button (works on both desktop and mobile; tap or Enter) */}
+        {hasTaskName && (
+          <button
+            type="button"
+            onClick={createTask}
+            className="mt-3 px-4 py-2 rounded-lg bg-[#0066CC] text-white text-sm font-medium hover:bg-[#0052A3] transition-colors min-h-[44px]"
+            aria-label="Add task"
+          >
+            Add task
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1787,6 +1795,7 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
   };
 
   const isPastTask = step !== 'task';
+  const hasTaskName = taskName.trim().length > 0;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
@@ -1807,50 +1816,36 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
           autoFocus
         />
 
-        {/* Type Selection */}
-        {isPastTask && (
-          <KeyboardSelect
-            ref={typeSelectRef}
+        {/* Type Selection - dropdown for first-time create (tap-friendly) */}
+        {hasTaskName && (
+          <TypeDropdown
             value={selectedType}
             options={types}
-            onValueChange={(val) => {
+            onChange={(val) => {
               setSelectedType(val);
               setTypeIndex(types.findIndex(t => t.name === val));
             }}
-            onEnter={goToNextStep}
-            onEscape={resetForm}
-            onLeft={() => {}}
-            onRight={() => goToStep('status')}
-            getColor={getTypeColor}
-            displayKey="name"
-            valueKey="name"
-            isActive={step === 'type'}
+            getTypeColor={getTypeColor}
+            className="min-w-[100px]"
           />
         )}
 
-        {/* Status Selection */}
-        {isPastTask && (
-          <KeyboardSelect
-            ref={statusSelectRef}
+        {/* Status Selection - dropdown for first-time create (tap-friendly) */}
+        {hasTaskName && (
+          <StatusDropdown
             value={selectedStatus}
-            options={statuses.map(s => ({ name: s.name, value: s.name }))}
-            onValueChange={(val) => {
+            options={statuses}
+            onChange={(val) => {
               setSelectedStatus(val);
               setStatusIndex(statuses.findIndex(s => s.name === val));
             }}
-            onEnter={goToNextStep}
-            onEscape={resetForm}
-            onLeft={() => goToStep('type')}
-            onRight={() => goToStep('dueDate')}
-            getColor={getStatusColor}
-            displayKey="name"
-            valueKey="value"
-            isActive={step === 'status'}
+            getStatusColor={getStatusColor}
+            className="min-w-[120px]"
           />
         )}
 
         {/* Due Date Selection */}
-        {isPastTask && (
+        {hasTaskName && (
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <button
@@ -1899,57 +1894,47 @@ function ProjectInlineTaskCreator({ types, statuses, persons, getStatusColor, ge
           </div>
         )}
 
-        {/* POC Selection */}
-        {isPastTask && (
-          <KeyboardSelect
-            ref={pocSelectRef}
-            value={selectedPOC[0] || ''}
-            options={[{ name: '- (Unassigned)', value: '' }, ...(persons || []).map(p => ({ name: p.name, value: p.id }))]}
-            onValueChange={(val) => {
-              if (val === '' || val === null) {
-                setSelectedPOC([]);
-                setPocIndex(-1);
-              } else {
-                setSelectedPOC([parseInt(val)]);
-                setPocIndex((persons || []).findIndex(p => p.id === parseInt(val)));
-              }
-            }}
-            onEnter={createTask}
-            onEscape={resetForm}
-            onLeft={() => goToStep('dueDate')}
-            onRight={() => {}}
-            displayKey="name"
-            valueKey="value"
-            isActive={step === 'poc'}
-            placeholder="- (Unassigned)"
-          />
+        {/* POC Selection - dropdown for first-time create (tap-friendly) */}
+        {hasTaskName && (
+          <div className="min-w-[140px]">
+            <select
+              value={selectedPOC[0] ?? ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '' || val === null) {
+                  setSelectedPOC([]);
+                  setPocIndex(-1);
+                } else {
+                  const id = parseInt(val, 10);
+                  setSelectedPOC([id]);
+                  setPocIndex((persons || []).findIndex(p => p.id === id));
+                }
+              }}
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-[#F5F5F7] text-sm text-[#1D1D1F] outline-none focus:ring-2 focus:ring-[#0066CC]"
+            >
+              <option value="">- (Unassigned)</option>
+              {(persons || []).map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
         )}
 
-        {/* Instructions */}
-        <div className="text-sm text-gray-500 flex-shrink-0">
-          {step === 'task' && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              Type task name, press Enter
-            </span>
-          )}
-          {(step === 'type' || step === 'status') && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ↑↓ to change, ←→ to navigate, Enter to continue
-            </span>
-          )}
-          {step === 'dueDate' && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ↑↓ to change days, click for calendar, Enter to continue
-            </span>
-          )}
-          {step === 'poc' && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 bg-[#0066CC] rounded-full animate-pulse"></span>
-              ↑↓ to change, ← to go back, Enter to create
-            </span>
+        {/* Instructions + Add button */}
+        <div className="flex items-center gap-2 flex-wrap w-full mt-2">
+          <span className="text-sm text-gray-500">
+            {!hasTaskName && 'Type task name, then tap Type/Status or Add'}
+            {hasTaskName && 'Tap dropdowns to change, Enter or Add to create'}
+          </span>
+          {hasTaskName && (
+            <button
+              type="button"
+              onClick={createTask}
+              className="ml-auto px-4 py-2 rounded-lg bg-[#0066CC] text-white text-sm font-medium hover:bg-[#0052A3] transition-colors min-h-[44px]"
+              aria-label="Add task"
+            >
+              Add task
+            </button>
           )}
         </div>
       </div>
@@ -2130,7 +2115,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
         }`}
       />
 
-      {isPastTask && (
+      {hasTaskName && (
         <KeyboardSelect
           ref={typeSelectRef}
           value={selectedType}
@@ -2151,7 +2136,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
         />
       )}
 
-      {isPastTask && (
+      {hasTaskName && (
         <KeyboardSelect
           ref={statusSelectRef}
           value={selectedStatus}
@@ -2173,7 +2158,7 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
       )}
 
       {/* Due Date Selection */}
-      {isPastTask && (
+      {hasTaskName && (
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <button
@@ -2242,12 +2227,24 @@ function PersonTaskCreator({ projects, types, statuses, persons, getStatusColor,
         />
       )}
 
-      <span className="text-xs text-gray-400">
-        {step === 'task' && 'Enter to continue'}
-        {(step === 'type' || step === 'status') && '↑↓ change, ←→ navigate'}
-        {step === 'dueDate' && '↑↓ days, click for cal'}
-        {step === 'project' && '↑↓ change, Enter to create'}
-      </span>
+      <div className="flex items-center gap-2 mt-2">
+        <span className="text-xs text-gray-400">
+          {step === 'task' && 'Enter to continue or tap Add'}
+          {(step === 'type' || step === 'status') && '↑↓ change, ←→ navigate'}
+          {step === 'dueDate' && '↑↓ days, click for cal'}
+          {step === 'project' && '↑↓ change, Enter/Add to create'}
+        </span>
+
+        {hasTaskName && (
+          <button
+            type="button"
+            onClick={createTask}
+            className="ml-auto px-3 py-1.5 rounded-lg bg-[#0066CC] text-white text-xs font-medium hover:bg-[#0052A3] transition-colors"
+          >
+            Add task
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -2314,7 +2311,7 @@ function TaskView({
   }, [tasks, filterType, filterStatus, filterProject, filterPOC, searchQuery, projects, types, statuses]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col md:overflow-hidden">
       <div className="bg-white border-b border-gray-200 p-4">
         <div className="flex gap-2 sm:gap-3 flex-wrap items-center mb-4">
           <input
@@ -2393,7 +2390,7 @@ function TaskView({
 
 
 // Project Task Table Row Component (for Project View table)
-function ProjectTaskTableRow({ task, projects, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask }) {
+function ProjectTaskTableRow({ task, projects, types, statuses, persons, getStatusColor, getTypeColor, updateTask, toggleTaskDone, deleteTask, goToProject }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.name);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -2469,6 +2466,7 @@ function ProjectTaskTableRow({ task, projects, types, statuses, persons, getStat
           selectedIds={task.projectIds || [task.projectId]}
           projects={projects || []}
           onChange={(newIds) => updateTask(task.id, 'projectIds', newIds)}
+          onProjectClick={goToProject}
           compact={true}
         />
       </td>
@@ -2738,6 +2736,7 @@ function TaskTableRow({ task, project, projects, types, statuses, persons, getSt
           selectedIds={task.projectIds || [task.projectId]}
           projects={projects}
           onChange={(newIds) => updateTask(task.id, 'projectIds', newIds)}
+          onProjectClick={onProjectClick}
           compact={true}
         />
       </td>
@@ -2939,7 +2938,7 @@ function StatusDropdown({ value, options, onChange, getStatusColor, className = 
 }
 
 // Project Multi-Select Component (for assigning tasks to multiple projects)
-function ProjectMultiSelect({ selectedIds = [], projects, onChange, compact = false }) {
+function ProjectMultiSelect({ selectedIds = [], projects, onChange, onProjectClick, compact = false }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const selectedProjects = projects.filter(p => selectedIds.includes(p.id));
@@ -2955,8 +2954,7 @@ function ProjectMultiSelect({ selectedIds = [], projects, onChange, compact = fa
 
   return (
     <div className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
+      <div
         className={`w-full flex items-center justify-between gap-1 px-2 py-1 rounded-lg border border-gray-200 hover:border-[#0066CC] transition-colors bg-white ${
           compact ? 'text-xs' : 'text-sm'
         }`}
@@ -2967,7 +2965,8 @@ function ProjectMultiSelect({ selectedIds = [], projects, onChange, compact = fa
               {selectedProjects.slice(0, 2).map(proj => (
                 <span
                   key={proj.id}
-                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-[#E8E8ED] text-[#1D1D1F]"
+                  onClick={(e) => { e.stopPropagation(); onProjectClick?.(proj.id); }}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-[#E8E8ED] text-[#1D1D1F] cursor-pointer hover:bg-[#0066CC]/10 hover:text-[#0066CC] transition-colors"
                 >
                   {proj.name}
                 </span>
@@ -2980,8 +2979,10 @@ function ProjectMultiSelect({ selectedIds = [], projects, onChange, compact = fa
             <span className="text-gray-400">-</span>
           )}
         </div>
-        <ChevronDown className="w-3 h-3 text-gray-400 flex-shrink-0" />
-      </button>
+        <button onClick={() => setIsOpen(!isOpen)} className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 transition-colors">
+          <ChevronDown className="w-3 h-3 text-gray-400" />
+        </button>
+      </div>
 
       {isOpen && (
         <>
@@ -3835,6 +3836,7 @@ function PersonView({
                                 selectedIds={task.projectIds || [task.projectId]}
                                 projects={projects}
                                 onChange={(newIds) => updateTask(task.id, 'projectIds', newIds)}
+                                onProjectClick={goToProject}
                                 compact={true}
                               />
                             </td>
