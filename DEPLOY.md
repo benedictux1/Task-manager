@@ -30,7 +30,16 @@ The app uses a **Node server** that serves the built frontend from **`dist`**. T
    - **Manual Deploy** → **Clear build cache & deploy**.
    - Do **not** use `--accept-data-loss`; that would remove the Office/Personal feature.
 
-5. **Verify:**  
+5. **"P3005" / "The database schema is not empty" (baseline):**  
+   Your production DB was set up without migration history (e.g. with `db push`). Run this **once** from your machine with the **production** database URL:
+   - In **Render Dashboard** → your **Postgres** service (or Environment) → copy the **Internal Database URL** (or the one your app uses).
+   - From the repo root:
+     ```bash
+     DATABASE_URL="postgresql://user:pass@host/dbname" bash scripts/baseline-production.sh
+     ```
+   - Then trigger **Manual Deploy** (no need to clear cache). Future deploys will run `migrate deploy` without this error.
+
+6. **Verify:**  
    Open your Render URL on desktop: in **Tasks**, type a task name and confirm you see the **Add task** button and **Type/Status dropdowns**. Then test on your phone.
 
 ## Option A: Other hosts that build from repo (e.g. Netlify, Vercel)

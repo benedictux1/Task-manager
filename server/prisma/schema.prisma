@@ -14,6 +14,7 @@ model Project {
   id           Int            @id @default(autoincrement())
   name         String
   notes        String         @default("")
+  context      String         @default("office")  // "office" | "personal"
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   tasks        Task[]
@@ -28,6 +29,7 @@ model Task {
   startDate   String    @default("")  // Optional; when set, Gantt shows bar from start to due
   dueDate     String    @default("")
   notes       String    @default("")
+  context     String    @default("office")  // "office" | "personal"
   completedAt DateTime? // Timestamp when task was marked as Done
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

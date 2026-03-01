@@ -25,10 +25,15 @@ app.use(express.static(path.join(__dirname, '../dist')));
 
 // ----- PROJECTS -----
 
-// Get all projects
+// Get all projects (optional ?context=office|personal)
 app.get('/api/projects', async (req, res) => {
   try {
+    const where = {};
+    if (req.query.context === 'office' || req.query.context === 'personal') {
+      where.context = req.query.context;
+    }
     const projects = await prisma.project.findMany({
+      where,
       orderBy: { createdAt: 'desc' }
     });
     res.json(projects);
@@ -57,9 +62,10 @@ app.get('/api/projects/:id', async (req, res) => {
 // Create project
 app.post('/api/projects', async (req, res) => {
   try {
-    const { name, notes } = req.body;
+    const { name, notes, context } = req.body;
+    const projectContext = context === 'personal' ? 'personal' : 'office';
     const project = await prisma.project.create({
-      data: { name: name || 'New Project', notes: notes || '' }
+      data: { name: name || 'New Project', notes: notes || '', context: projectContext }
     });
     res.status(201).json(project);
   } catch (error) {
@@ -120,11 +126,16 @@ const formatTask = (task) => {
 // Backward-compat alias
 const formatTaskWithPersons = formatTask;
 
-// Get all tasks
+// Get all tasks (optional ?context=office|personal; when absent returns all)
 app.get('/api/tasks', async (req, res) => {
   try {
+    const where = {};
+    if (req.query.context === 'office' || req.query.context === 'personal') {
+      where.context = req.query.context;
+    }
     const tasks = await prisma.task.findMany({
-      include: { 
+      where,
+      include: {
         project: true,
         persons: { include: { person: true } },
         taskProjects: { include: { project: true } }
@@ -138,11 +149,16 @@ app.get('/api/tasks', async (req, res) => {
   }
 });
 
-// Get tasks by project
+// Get tasks by project (only tasks in same context as project; project implies context)
 app.get('/api/projects/:projectId/tasks', async (req, res) => {
   try {
+    const projectId = parseInt(req.params.projectId);
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
     const tasks = await prisma.task.findMany({
-      where: { projectId: parseInt(req.params.projectId) },
+      where: { projectId, context: project.context },
       include: {
         persons: { include: { person: true } },
         taskProjects: { include: { project: true } }
@@ -192,7 +208,8 @@ app.get('/api/tasks/by-person', async (req, res) => {
 // Create task
 app.post('/api/tasks', async (req, res) => {
   try {
-    const { name, projectId, projectIds, type, status, startDate, dueDate, notes, personIds } = req.body;
+    const { name, projectId, projectIds, type, status, startDate, dueDate, notes, personIds, context } = req.body;
+    const taskContext = context === 'personal' ? 'personal' : 'office';
     // Support both projectIds array (new) and single projectId (backward compat)
     const resolvedProjectIds = projectIds && projectIds.length > 0
       ? projectIds.map(id => parseInt(id))
@@ -208,6 +225,7 @@ app.post('/api/tasks', async (req, res) => {
         startDate: startDate ?? '',
         dueDate: dueDate || '',
         notes: notes || '',
+        context: taskContext,
         persons: personIds && personIds.length > 0 ? {
           create: personIds.map(personId => ({ personId: parseInt(personId) }))
         } : undefined,

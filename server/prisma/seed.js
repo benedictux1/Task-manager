@@ -57,39 +57,42 @@ async function main() {
   }
   console.log('✅ Created people (POC)');
 
-  // Create sample projects
+  // Create sample projects (office context)
   const project1 = await prisma.project.create({
     data: {
       name: 'Website Redesign',
-      notes: '<p>Modernize company website with new branding.</p><h3>Key objectives:</h3><ul><li>Improve mobile responsiveness</li><li>Update color scheme to match new brand guidelines</li><li>Optimize page load speed</li></ul><p><strong>Stakeholders:</strong> Marketing team, Design team, Dev team</p><p><mark>Deadline: End of Q1</mark></p>'
+      notes: '<p>Modernize company website with new branding.</p><h3>Key objectives:</h3><ul><li>Improve mobile responsiveness</li><li>Update color scheme to match new brand guidelines</li><li>Optimize page load speed</li></ul><p><strong>Stakeholders:</strong> Marketing team, Design team, Dev team</p><p><mark>Deadline: End of Q1</mark></p>',
+      context: 'office'
     }
   });
 
   const project2 = await prisma.project.create({
     data: {
       name: 'Q1 Planning',
-      notes: '<p>Strategic planning for Q1 2026.</p><h3>Focus areas:</h3><ol><li>Revenue targets</li><li>Team expansion</li><li>Product roadmap priorities</li></ol><p><strong>Meeting notes from 1/15:</strong> Board approved budget increase for hiring.</p>'
+      notes: '<p>Strategic planning for Q1 2026.</p><h3>Focus areas:</h3><ol><li>Revenue targets</li><li>Team expansion</li><li>Product roadmap priorities</li></ol><p><strong>Meeting notes from 1/15:</strong> Board approved budget increase for hiring.</p>',
+      context: 'office'
     }
   });
 
   const project3 = await prisma.project.create({
     data: {
       name: 'Client Onboarding System',
-      notes: '<p>Build automated onboarding flow for new clients.</p><h3>Requirements:</h3><ul><li>Welcome email sequence</li><li>Documentation portal</li><li>Kickoff meeting scheduler</li><li>Contract signing workflow</li></ul>'
+      notes: '<p>Build automated onboarding flow for new clients.</p><h3>Requirements:</h3><ul><li>Welcome email sequence</li><li>Documentation portal</li><li>Kickoff meeting scheduler</li><li>Contract signing workflow</li></ul>',
+      context: 'office'
     }
   });
   console.log('✅ Created projects');
 
-  // Create sample tasks
+  // Create sample tasks (office context)
   const tasks = [
-    { name: 'Review design mockups', projectId: project1.id, type: 'Urgent', status: 'Must do', dueDate: '25/Jan', notes: '' },
-    { name: 'Update homepage copy', projectId: project1.id, type: 'Regular', status: 'My action', dueDate: '28/Jan', notes: '' },
-    { name: 'Get feedback from CEO', projectId: project1.id, type: 'Regular', status: 'Waiting others', dueDate: '', notes: '' },
-    { name: 'Finalize Q1 OKRs', projectId: project2.id, type: 'Urgent', status: 'Must do', dueDate: '24/Jan', notes: '' },
-    { name: 'Schedule team kickoff', projectId: project2.id, type: 'Admin', status: 'My action', dueDate: '27/Jan', notes: '' },
-    { name: 'Review budget proposals', projectId: project2.id, type: 'Regular', status: 'Done', dueDate: '20/Jan', notes: '' },
-    { name: 'Draft welcome email template', projectId: project3.id, type: 'Regular', status: 'My action', dueDate: '', notes: '' },
-    { name: 'Build documentation site', projectId: project3.id, type: 'Backlog', status: 'Waiting others', dueDate: '', notes: '' },
+    { name: 'Review design mockups', projectId: project1.id, type: 'Urgent', status: 'Must do', dueDate: '25/Jan', notes: '', context: 'office' },
+    { name: 'Update homepage copy', projectId: project1.id, type: 'Regular', status: 'My action', dueDate: '28/Jan', notes: '', context: 'office' },
+    { name: 'Get feedback from CEO', projectId: project1.id, type: 'Regular', status: 'Waiting others', dueDate: '', notes: '', context: 'office' },
+    { name: 'Finalize Q1 OKRs', projectId: project2.id, type: 'Urgent', status: 'Must do', dueDate: '24/Jan', notes: '', context: 'office' },
+    { name: 'Schedule team kickoff', projectId: project2.id, type: 'Admin', status: 'My action', dueDate: '27/Jan', notes: '', context: 'office' },
+    { name: 'Review budget proposals', projectId: project2.id, type: 'Regular', status: 'Done', dueDate: '20/Jan', notes: '', context: 'office' },
+    { name: 'Draft welcome email template', projectId: project3.id, type: 'Regular', status: 'My action', dueDate: '', notes: '', context: 'office' },
+    { name: 'Build documentation site', projectId: project3.id, type: 'Backlog', status: 'Waiting others', dueDate: '', notes: '', context: 'office' },
   ];
 
   for (const task of tasks) {

@@ -26,8 +26,8 @@ async function fetchAPI(endpoint, options = {}) {
 // ==================== PROJECTS ====================
 
 export const projectsAPI = {
-  // Get all projects
-  getAll: () => fetchAPI('/projects'),
+  // Get all projects (optional context: 'office' | 'personal')
+  getAll: (context) => fetchAPI(context === 'office' || context === 'personal' ? `/projects?context=${context}` : '/projects'),
   
   // Get single project
   getById: (id) => fetchAPI(`/projects/${id}`),
@@ -53,8 +53,8 @@ export const projectsAPI = {
 // ==================== TASKS ====================
 
 export const tasksAPI = {
-  // Get all tasks
-  getAll: () => fetchAPI('/tasks'),
+  // Get all tasks (optional context: 'office' | 'personal')
+  getAll: (context) => fetchAPI(context === 'office' || context === 'personal' ? `/tasks?context=${context}` : '/tasks'),
   
   // Get tasks by project
   getByProject: (projectId) => fetchAPI(`/projects/${projectId}/tasks`),

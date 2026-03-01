@@ -92,6 +92,17 @@ const KeyboardSelect = React.forwardRef(function KeyboardSelect({
   );
 });
 
+const CONTEXT_STORAGE_KEY = 'taskManagerContext';
+
+function getStoredContext() {
+  try {
+    const s = localStorage.getItem(CONTEXT_STORAGE_KEY);
+    return s === 'personal' ? 'personal' : 'office';
+  } catch {
+    return 'office';
+  }
+}
+
 // Main App Component
 export default function TaskManagerApp() {
   const [currentView, setCurrentView] = useState('task');
@@ -99,6 +110,8 @@ export default function TaskManagerApp() {
   const [showSettings, setShowSettings] = useState(false);
   // Gantt scope: null = all projects, number[] = selected project IDs (multi-select)
   const [ganttScopeProjectIds, setGanttScopeProjectIds] = useState(null);
+  // Office vs Personal list (persisted in localStorage)
+  const [taskContext, setTaskContext] = useState(getStoredContext);
   
   // Loading and error states
   const [isLoading, setIsLoading] = useState(true);
@@ -152,10 +165,10 @@ export default function TaskManagerApp() {
     setError(null);
     
     try {
-      // Fetch all data in parallel
+      // Fetch all data in parallel (scoped by taskContext for projects and tasks)
       const [projectsData, tasksData, settingsData] = await Promise.all([
-        projectsAPI.getAll(),
-        tasksAPI.getAll(),
+        projectsAPI.getAll(taskContext),
+        tasksAPI.getAll(taskContext),
         settingsAPI.getAll()
       ]);
       
@@ -199,9 +212,14 @@ export default function TaskManagerApp() {
         setPersons([]);
       }
       
-      // Set selected project to first one if not set
-      if (projectsData.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(projectsData[0].id);
+      // Set or reset selected project: keep if still in list, else first or null
+      if (projectsData.length > 0) {
+        setSelectedProjectId(prev => {
+          const exists = projectsData.some(p => p.id === prev);
+          return exists ? prev : projectsData[0].id;
+        });
+      } else {
+        setSelectedProjectId(null);
       }
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -227,12 +245,12 @@ export default function TaskManagerApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedProjectId]);
+  }, [taskContext]);
 
-  // Fetch data on mount
+  // Fetch data on mount and when taskContext changes
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const getStatusColor = (statusName) => {
     const status = statuses.find(s => s.name === statusName);
@@ -243,7 +261,7 @@ export default function TaskManagerApp() {
 
   const addProject = async () => {
     try {
-      const newProject = await projectsAPI.create({ name: 'New Project', notes: '' });
+      const newProject = await projectsAPI.create({ name: 'New Project', notes: '', context: taskContext });
       setProjects([newProject, ...projects]);
       setSelectedProjectId(newProject.id);
     } catch (err) {
@@ -309,7 +327,8 @@ export default function TaskManagerApp() {
         status: 'My action',
         startDate: '',
         dueDate: newTaskDueDate,
-        notes: ''
+        notes: '',
+        context: taskContext
       });
       setTasks([newTask, ...tasks]);
       setNewTaskInput('');
@@ -326,7 +345,8 @@ export default function TaskManagerApp() {
     try {
       const newTask = await tasksAPI.create({
         ...taskData,
-        notes: taskData.notes || ''
+        notes: taskData.notes || '',
+        context: taskContext
       });
       console.log('Task created successfully:', newTask); // Debug log
       setTasks([newTask, ...tasks]);
@@ -403,7 +423,21 @@ export default function TaskManagerApp() {
   return (
     <div className="min-h-screen bg-[#F5F5F7] flex flex-col">
       <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <h1 className="text-xl sm:text-2xl font-semibold text-[#1D1D1F]">Task Manager</h1>
+        <button
+          type="button"
+          onClick={() => {
+            setTaskContext(prev => {
+              const next = prev === 'office' ? 'personal' : 'office';
+              try {
+                localStorage.setItem(CONTEXT_STORAGE_KEY, next);
+              } catch (_) {}
+              return next;
+            });
+          }}
+          className="text-left text-xl sm:text-2xl font-semibold text-[#1D1D1F] hover:text-[#0066CC] transition-colors"
+        >
+          {taskContext === 'office' ? 'Office work' : 'Personal life'}
+        </button>
         <div className="flex items-center gap-4">
           <div className="flex bg-[#F5F5F7] rounded-lg p-1">
             <button
