@@ -9,8 +9,9 @@ The app uses a **Node server** that serves the built frontend from **`dist`**. T
 1. **Use the included `render.yaml`**  
    Commit and push it so Render uses:
    - **Build command:** `npm run build:render`  
-     (This runs root `npm install`, then `npm run build` to create `dist/`, then server install + Prisma.)
+     (This runs root `npm install`, then `npm run build` to create `dist/`, then server install + Prisma **migrate deploy**.)
    - **Start command:** `npm start` (runs the server, which serves `../dist`.)
+   - The build uses **`prisma migrate deploy`** (not `db push`) so the database is updated only via migrations and existing data is not at risk.
 
 2. **If you configured the service manually (no Blueprint):**  
    In Render Dashboard → your service → **Settings**:
@@ -22,7 +23,14 @@ The app uses a **Node server** that serves the built frontend from **`dist`**. T
    - In Render: **Manual Deploy** → **Clear build cache & deploy**.
    - Wait for the build to finish. If the build fails, check the logs (e.g. PostCSS/Node version).
 
-4. **Verify:**  
+4. **"Drop the column context" / "accept-data-loss" error:**  
+   The build now uses a dedicated script that runs **only** `prisma migrate deploy` (never `db push`).
+   - Ensure you have committed and pushed **all** of: `package.json`, `scripts/render-build.sh`, and `server/prisma/migrations/`.
+   - In **Render Dashboard** → your **task-manager** service → **Settings** → **Build Command**: set to **`npm run build:render`**.
+   - **Manual Deploy** → **Clear build cache & deploy**.
+   - Do **not** use `--accept-data-loss`; that would remove the Office/Personal feature.
+
+5. **Verify:**  
    Open your Render URL on desktop: in **Tasks**, type a task name and confirm you see the **Add task** button and **Type/Status dropdowns**. Then test on your phone.
 
 ## Option A: Other hosts that build from repo (e.g. Netlify, Vercel)

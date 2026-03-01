@@ -9,7 +9,7 @@
     "dev:server": "cd server && npm run dev",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
-    "build:render": "npm install && npm run build && cd server && npm install && npx prisma generate && npx prisma db push",
+    "build:render": "npm install && npm run build && bash scripts/render-build.sh",
     "start": "cd server && npm start",
     "db:seed": "cd server && npm run db:seed",
     "preview": "vite preview"
