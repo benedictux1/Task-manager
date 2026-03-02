@@ -94,6 +94,13 @@ const KeyboardSelect = React.forwardRef(function KeyboardSelect({
 
 const CONTEXT_STORAGE_KEY = 'taskManagerContext';
 
+function getTaskDueSortValue(task) {
+  if (!task.dueDate) return Infinity;
+  const dateObj = parseDueDate(task.dueDate);
+  if (!dateObj) return Infinity;
+  return dateObj.getTime();
+}
+
 function getStoredContext() {
   try {
     const s = localStorage.getItem(CONTEXT_STORAGE_KEY);
@@ -651,7 +658,13 @@ function ProjectView({
       
       // Then sort by status within same type (using order from settings)
       const statusCompare = (statusOrderMap[a.status] ?? 99) - (statusOrderMap[b.status] ?? 99);
-      return statusCompare;
+      if (statusCompare !== 0) return statusCompare;
+
+      const aDue = getTaskDueSortValue(a);
+      const bDue = getTaskDueSortValue(b);
+      if (aDue !== bDue) return aDue - bDue;
+
+      return a.name.localeCompare(b.name);
     });
   }, [projectTasks, types, statuses]);
 
@@ -2336,9 +2349,11 @@ function TaskView({
       const statusCompare = (statusOrderMap[a.status] ?? 99) - (statusOrderMap[b.status] ?? 99);
       if (statusCompare !== 0) return statusCompare;
 
-      if (a.dueDate && !b.dueDate) return -1;
-      if (!a.dueDate && b.dueDate) return 1;
-      return 0;
+      const aDue = getTaskDueSortValue(a);
+      const bDue = getTaskDueSortValue(b);
+      if (aDue !== bDue) return aDue - bDue;
+
+      return a.name.localeCompare(b.name);
     });
 
     return filtered;
@@ -3764,7 +3779,13 @@ function PersonView({
         
         // Then sort by status within same type (using order from settings)
         const statusCompare = (statusOrderMap[a.status] ?? 99) - (statusOrderMap[b.status] ?? 99);
-        return statusCompare;
+        if (statusCompare !== 0) return statusCompare;
+
+        const aDue = getTaskDueSortValue(a);
+        const bDue = getTaskDueSortValue(b);
+        if (aDue !== bDue) return aDue - bDue;
+
+        return a.name.localeCompare(b.name);
       });
   };
 
