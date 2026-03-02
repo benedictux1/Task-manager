@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Plus, Settings, X, ChevronDown, ChevronRight, Bold, Italic, List, ListOrdered, Highlighter, Indent, Outdent, Calendar, Type, Palette, Menu, Loader2, User, Users, ChevronsUp, ChevronsDown, GripVertical, BarChart3 } from 'lucide-react';
 import { getWorkingDaysUntilDue, formatDateToDDMMM, parseDueDate, addWorkingDays } from './utils/dateUtils';
+import { exportTasksToCsv } from './utils/exportCsv';
 import { projectsAPI, tasksAPI, settingsAPI, personsAPI } from './api';
 
 // Custom Keyboard-navigable Select (works consistently across browsers including Edge)
@@ -613,6 +614,8 @@ export default function TaskManagerApp() {
           setStatuses={setStatuses}
           persons={persons}
           setPersons={setPersons}
+          tasks={tasks}
+          taskContext={taskContext}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -3968,7 +3971,7 @@ function PersonView({
 }
 
 // Settings Modal Component (SMALLER - 20% reduction)
-function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPersons, onClose }) {
+function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPersons, tasks, taskContext, onClose }) {
   const [newType, setNewType] = useState({ name: '', color: '#0066CC' });
   const [newStatus, setNewStatus] = useState({ name: '', color: '#0066CC' });
   const [newPerson, setNewPerson] = useState({ name: '', color: '' });
@@ -4306,6 +4309,21 @@ function SettingsModal({ types, setTypes, statuses, setStatuses, persons, setPer
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-2">Color is optional - people without color will show as gray.</p>
+          </div>
+
+          {/* Export Data Section */}
+          <div>
+            <h3 className="text-sm font-semibold text-[#1D1D1F] mb-1">Export data</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Download all current tasks for this {taskContext === 'office' ? 'Office work' : 'Personal life'} list as a CSV file.
+            </p>
+            <button
+              onClick={() => exportTasksToCsv({ tasks, context: taskContext })}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#0066CC] text-white rounded-lg hover:bg-[#0052A3] transition-colors text-sm font-medium"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Export current data to CSV</span>
+            </button>
           </div>
         </div>
 
